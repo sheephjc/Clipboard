@@ -540,45 +540,6 @@ def small_shell_icon_size() -> int:
     return 16
 
 
-def large_shell_icon_size() -> int:
-    with contextlib.suppress(Exception):
-        return int(win32api.GetSystemMetrics(win32con.SM_CXICON))
-    return 32
-
-
-def extract_icon_handle(icon_source: str | Path, size: int) -> int | None:
-    source_path = Path(icon_source)
-    if not source_path.exists():
-        return None
-
-    icon_handles = (ctypes.c_void_p * 1)()
-    icon_ids = (ctypes.c_uint * 1)()
-    with contextlib.suppress(Exception):
-        extracted = ctypes.windll.user32.PrivateExtractIconsW(
-            str(source_path),
-            0,
-            max(16, int(size)),
-            max(16, int(size)),
-            icon_handles,
-            icon_ids,
-            1,
-            0,
-        )
-        if extracted and icon_handles[0]:
-            return int(icon_handles[0])
-    return None
-
-
-def set_window_class_icon(hwnd: int, icon_type: int, icon_handle: int) -> None:
-    class_index = -34 if icon_type == win32con.ICON_SMALL else -14
-    user32 = ctypes.windll.user32
-    setter = getattr(user32, 'SetClassLongPtrW', None)
-    if setter is not None:
-        setter(hwnd, class_index, icon_handle)
-    else:
-        user32.SetClassLongW(hwnd, class_index, icon_handle)
-
-
 def load_image_safely(image_path: str | Path) -> Image.Image:
     with contextlib.redirect_stderr(io.StringIO()):
         with Image.open(image_path) as image:
@@ -2022,8 +1983,6 @@ class ClipboardManagerApp(tk.Tk):
         self.icon_ico = icon_ico_path()
         self.icon_png = icon_png_path()
         self.window_has_been_presented = False
-        self.window_icon_handles: list[int] = []
-        self.native_window_icon_applied = False
         self.is_pinned = False
 
         self.withdraw()
@@ -2043,6 +2002,7 @@ class ClipboardManagerApp(tk.Tk):
         self.startup_chip: tk.Frame | None = None
         self.startup_chip_title: tk.Label | None = None
         self.startup_chip_dot: tk.Label | None = None
+        self.help_button: tk.Label | None = None
         self.pin_button: tk.Label | None = None
         self._configure_window_appearance()
 
@@ -2133,71 +2093,35 @@ class ClipboardManagerApp(tk.Tk):
         self._apply_tk_scaling()
         self.window_icon_photos = []
 
-        if not getattr(sys, "frozen", False):
-            icon_sources = [icon_variant_png_path(32), icon_variant_png_path(64), self.icon_png]
-            for icon_source in icon_sources:
-                if not icon_source.exists():
-                    continue
-                self.window_icon_photos.append(ImageTk.PhotoImage(load_image_safely(icon_source)))
+        icon_sources = [
+            icon_variant_png_path(16),
+            icon_variant_png_path(24),
+            icon_variant_png_path(32),
+            icon_variant_png_path(48),
+            icon_variant_png_path(64),
+            icon_variant_png_path(128),
+            self.icon_png,
+        ]
+        for icon_source in icon_sources:
+            if not icon_source.exists():
+                continue
+            self.window_icon_photos.append(ImageTk.PhotoImage(load_image_safely(icon_source)))
 
-            if self.window_icon_photos:
-                self.window_icon_photo = self.window_icon_photos[-1]
-                with contextlib.suppress(Exception):
-                    self.iconphoto(True, *self.window_icon_photos)
+        if self.window_icon_photos:
+            self.window_icon_photo = self.window_icon_photos[-1]
+            with contextlib.suppress(Exception):
+                self.iconphoto(True, *self.window_icon_photos)
 
-            icon_bitmap_source = icon_variant_ico_path(64) if icon_variant_ico_path(64).exists() else self.icon_ico
-            if icon_bitmap_source.exists():
-                with contextlib.suppress(Exception):
-                    self.iconbitmap(str(icon_bitmap_source))
+        if self.icon_ico.exists():
+            with contextlib.suppress(Exception):
+                self.iconbitmap(str(self.icon_ico))
 
-        self.after(0, self._apply_native_window_icon)
 
     def _apply_tk_scaling(self) -> None:
         with contextlib.suppress(Exception):
             pixels_per_inch = float(self.winfo_fpixels("1i"))
             scaling = max(1.0, pixels_per_inch / 72.0)
             self.tk.call("tk", "scaling", scaling)
-
-    def _apply_native_window_icon(self) -> None:
-        if self.native_window_icon_applied:
-            return
-
-        hwnd = self.winfo_id()
-        handles: list[int] = []
-        icon_specs = (
-            (win32con.ICON_SMALL, max(small_shell_icon_size(), scaled_icon_size(16, hwnd))),
-            (win32con.ICON_BIG, max(large_shell_icon_size(), scaled_icon_size(32, hwnd))),
-        )
-        for icon_type, requested_size in icon_specs:
-            icon_handle = None
-            if getattr(sys, "frozen", False):
-                icon_handle = extract_icon_handle(Path(sys.executable), requested_size)
-
-            if not icon_handle:
-                icon_source = icon_variant_ico_path(requested_size)
-                if not icon_source.exists():
-                    icon_source = self.icon_ico
-                target_size = closest_icon_size(requested_size)
-                with contextlib.suppress(Exception):
-                    icon_handle = win32gui.LoadImage(
-                        0,
-                        str(icon_source),
-                        win32con.IMAGE_ICON,
-                        target_size,
-                        target_size,
-                        win32con.LR_LOADFROMFILE,
-                    )
-
-            if icon_handle:
-                with contextlib.suppress(Exception):
-                    win32gui.SendMessage(hwnd, win32con.WM_SETICON, icon_type, icon_handle)
-                with contextlib.suppress(Exception):
-                    set_window_class_icon(hwnd, icon_type, icon_handle)
-                handles.append(int(icon_handle))
-
-        if handles:
-            self.window_icon_handles = handles
-            self.native_window_icon_applied = True
 
     def _load_header_icon(self) -> ImageTk.PhotoImage | None:
         icon_source = icon_variant_png_path(64) if icon_variant_png_path(64).exists() else self.icon_png
@@ -2351,6 +2275,19 @@ class ClipboardManagerApp(tk.Tk):
             font=FONT_SMALL,
         )
         self.status_label.pack(side="left")
+
+        self.help_button = tk.Label(
+            header_controls,
+            text="?",
+            width=2,
+            anchor="center",
+            font=("Microsoft YaHei UI", 11, "bold"),
+            bg=COLORS["panel"],
+            fg=COLORS["text_dim"],
+            cursor="hand2",
+        )
+        self.help_button.pack(side="left", anchor="center", padx=(10, 0), pady=(0, 0))
+        self.help_button.bind("<Button-1>", lambda _event: self._show_about_dialog())
         
         self.pin_button = tk.Label(
             header_controls,
@@ -2360,7 +2297,7 @@ class ClipboardManagerApp(tk.Tk):
             fg=COLORS["text_dim"],
             cursor="hand2",
         )
-        self.pin_button.pack(side="left", anchor="center", padx=(12, 0), pady=(4, 0))
+        self.pin_button.pack(side="left", anchor="center", padx=(10, 0), pady=(5, 0))
         self.pin_button.bind("<Button-1>", lambda _event: self._toggle_pinned())
 
         toolbar = tk.Frame(self, bg=COLORS["bg"])
@@ -2746,6 +2683,22 @@ class ClipboardManagerApp(tk.Tk):
 
         if temporary:
             self.status_reset_after_id = self.after(1800, lambda: self._set_status("监听中", healthy=True))
+
+    def _show_about_dialog(self) -> None:
+        message = "\n".join(
+            [
+                f"Version: {APP_VERSION}",
+                "Author\uff1aHJC by codex",
+                "\u652f\u6301\u5f00\u673a\u81ea\u542f",
+                "\u652f\u6301\u81ea\u52a8\u5220\u9664",
+                "\u652f\u6301\u6536\u85cf",
+                "\u652f\u6301\u65e5\u671f\u7b5b\u9009",
+                "\u652f\u6301\u5728\u5185\u5bb9\u533a\u7f16\u8f91\u6587\u672c",
+                "\u652f\u6301\u5bcc\u6587\u672c\u548c\u7eaf\u6587\u672c\u590d\u5236",
+                "\u5173\u95ed\u9875\u9762\u6216\u5f00\u673a\u81ea\u542f\u9690\u85cf\u4e8e\u53f3\u4e0b\u89d2\u4efb\u52a1\u680f\u6258\u76d8\u5904",
+            ]
+        )
+        messagebox.showinfo("\u5173\u4e8e\u526a\u8d34\u677f", message, parent=self)
 
     def _apply_pinned_state(self) -> None:
         with contextlib.suppress(Exception):
@@ -3950,7 +3903,6 @@ class ClipboardManagerApp(tk.Tk):
         if center or not self.window_has_been_presented:
             self._place_window_centered()
         self.deiconify()
-        self._apply_native_window_icon()
         self.lift()
         self.attributes("-topmost", True)
         if self.is_pinned:
@@ -4050,11 +4002,6 @@ class ClipboardManagerApp(tk.Tk):
         if self.tray is not None:
             self.tray.stop()
             self.tray = None
-
-        for icon_handle in self.window_icon_handles:
-            with contextlib.suppress(Exception):
-                ctypes.windll.user32.DestroyIcon(icon_handle)
-        self.window_icon_handles = []
 
         self.store.close()
         self.destroy()
