@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clipboard 剪贴板历史工具</title>
+  <meta name="description" content="Clipboard 是一个轻量的剪贴板历史工具，支持文本、富文本、图片和文件路径记录。">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/clipboard_icon_16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/clipboard_icon_32.png">
+  <link rel="icon" type="image/png" sizes="256x256" href="assets/clipboard_icon_256.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2937;
+      --muted: #5b6472;
+      --paper: #f7f8fb;
+      --surface: #ffffff;
+      --line: #d9dee7;
+      --mint: #0f9f8f;
+      --mint-dark: #087668;
+      --coral: #e56b4f;
+      --yellow: #f2c94c;
+      --blue: #2f80ed;
+      --shadow: rgba(31, 41, 55, 0.13);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
+      line-height: 1.6;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      min-height: 100vh;
+    }
+
+    .top {
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .nav {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 20px;
+      text-decoration: none;
+    }
+
+    .brand img {
+      width: 38px;
+      height: 38px;
+      display: block;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      font-size: 14px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+    }
+
+    .hero {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+      min-height: calc(100vh - 72px);
+      display: grid;
+      grid-template-columns: minmax(380px, 1.16fr) minmax(300px, 0.84fr);
+      align-items: center;
+      gap: 40px;
+      padding: 56px 0 64px;
+      position: relative;
+    }
+
+    .app-meta {
+      position: absolute;
+      top: 14px;
+      right: 2px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      color: var(--muted);
+    }
+
+    .app-meta .version {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .app-meta .author {
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    .hero-copy {
+      order: 2;
+      max-width: 100%;
+      margin-top: -10px;
+    }
+
+    .hero-visual {
+      order: 1;
+      width: 100%;
+      justify-self: start;
+      align-self: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 4px 10px;
+      border: 1px solid rgba(15, 159, 143, 0.26);
+      border-radius: 8px;
+      color: var(--mint-dark);
+      background: rgba(15, 159, 143, 0.08);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0 0 18px;
+      max-width: none;
+      font-size: clamp(38px, 4.4vw, 50px);
+      line-height: 1.08;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .lead {
+      max-width: 670px;
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 20px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-weight: 800;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px var(--shadow);
+    }
+
+    .button.primary {
+      background: var(--mint);
+      color: #ffffff;
+    }
+
+    .button.primary:hover {
+      background: var(--mint-dark);
+    }
+
+    .button.secondary {
+      background: #ffffff;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    .button.disabled {
+      color: #6b7280;
+      background: #eef1f5;
+      border-color: #e2e6ee;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+      pointer-events: none;
+    }
+
+    .release-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .product-shot {
+      position: relative;
+      padding: 14px;
+      border: 1px solid #324f7b;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #10213a 0%, #172b47 100%);
+      box-shadow: 0 28px 60px var(--shadow);
+    }
+
+    .screenshot-frame {
+      border: 1px solid rgba(143, 166, 191, 0.42);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0a1628;
+    }
+
+    .screenshot-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .screenshot-note {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    .product-shot + .screenshot-note {
+      margin-top: 44px;
+    }
+
+    section {
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    section.bg-paper {
+      background: var(--paper);
+    }
+
+    .section-inner {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+      padding: 72px 0;
+    }
+
+    .section-heading {
+      max-width: 740px;
+      margin-bottom: 28px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 34px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .section-heading p,
+    .feature p,
+    .step p,
+    .privacy p {
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .feature,
+    .step,
+    .download-box,
+    .privacy {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .feature:hover,
+    .step:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px var(--shadow);
+    }
+
+    .feature {
+      padding: 18px;
+      min-height: 164px;
+    }
+
+    .feature strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 17px;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .step {
+      padding: 18px;
+    }
+
+    .step-number {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      background: var(--mint);
+      color: #ffffff;
+      font-weight: 800;
+    }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .download-box {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: space-between;
+    }
+
+    .download-box h3 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .download-box p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .privacy {
+      padding: 22px;
+      display: grid;
+      gap: 8px;
+    }
+
+    footer {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+      padding: 40px 0;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 860px) {
+      .nav {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 16px 0;
+      }
+
+      .nav-links {
+        flex-wrap: wrap;
+        white-space: normal;
+      }
+
+      .hero {
+        min-height: auto;
+        grid-template-columns: 1fr;
+        padding: 42px 0 56px;
+      }
+
+      .hero-copy,
+      .hero-visual {
+        order: initial;
+      }
+
+      .app-meta {
+        position: static;
+        align-items: flex-start;
+        margin-bottom: 8px;
+      }
+
+      .hero-copy {
+        margin-top: 0;
+      }
+
+      .hero-visual {
+        transform: none;
+      }
+
+      h1 {
+        font-size: 44px;
+        white-space: normal;
+      }
+
+      .lead {
+        font-size: 18px;
+      }
+
+      .features,
+      .steps,
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .nav,
+      .hero,
+      .section-inner,
+      footer {
+        width: min(100% - 24px, 1120px);
+      }
+
+      h1 {
+        font-size: 38px;
+      }
+
+      h2 {
+        font-size: 28px;
+      }
+
+      .actions {
+        align-items: stretch;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <nav class="nav" aria-label="主导航">
+        <a class="brand" href="#top" aria-label="Clipboard 首页">
+          <img src="assets/clipboard_icon_64.png" alt="">
+          <span>Clipboard</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">功能</a>
+          <a href="#download">步骤</a>
+          <a href="#privacy">隐私</a>
+          <a id="release-link" href="#">GitHub Releases</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="top">
+      <div class="hero">
+        <div class="app-meta">
+          <div class="version">Version: 2.0.0</div>
+          <div class="author">Author: HJC by codex</div>
+        </div>
+        <div class="hero-copy">
+          <h1>查询剪贴板历史内容。</h1>
+          <p class="lead">Clipboard 会记录文本、富文本、图片和文件路径。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。</p>
+          <div class="actions" id="download-actions">
+            <a class="button primary" id="windows-download" href="#">下载 Windows 版</a>
+            <a class="button secondary disabled" id="mac-download" href="#" aria-disabled="true">macOS 版准备中</a>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="product-shot" aria-label="Clipboard 截图">
+            <div class="screenshot-frame">
+              <img src="assets/app_screenshot.png" alt="Clipboard 应用界面截图">
+            </div>
+          </div>
+          <p class="screenshot-note">适用于所有人，尤其是经常查询历史剪贴板内容的用户。</p>
+          <p class="screenshot-note">例如写论文需要经常调用各个图片，或是处理大量文档的用户。</p>
+        </div>
+      </div>
+
+      <section id="features">
+        <div class="section-inner">
+          <div class="section-heading">
+            <h2>为想要查询曾经复制内容的人准备。</h2>
+            <p>轻量运行，默认驻留右下角任务栏托盘。关掉窗口后仍可继续监听，需要时再从托盘打开。</p>
+          </div>
+          <div class="features">
+            <article class="feature">
+              <strong>文本</strong>
+              <p>保留普通文本、HTML 和 RTF 内容，编辑后可以重新复制。编辑区支持上下标，支持快捷键。</p>
+            </article>
+            <article class="feature">
+              <strong>图片</strong>
+              <p>截图和复制过的图片会保存到本地，之后可再次写回剪贴板。</p>
+            </article>
+            <article class="feature">
+              <strong>文件</strong>
+              <p>文件和文件夹复制会进入“其他”分类，便于查找最近处理的路径。</p>
+            </article>
+            <article class="feature">
+              <strong>功能丰富</strong>
+              <p>支持开机自启，支持自动清理，支持收藏和日期筛选</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="download" class="bg-paper">
+        <div class="section-inner">
+          <div class="section-heading">
+            <h2>三步开始。</h2>
+          </div>
+          <div class="steps">
+            <article class="step">
+              <span class="step-number">1</span>
+              <p>下载压缩包并解压到常用位置。</p>
+            </article>
+            <article class="step">
+              <span class="step-number">2</span>
+              <p>运行 Clipboard.exe，托盘图标出现后即开始记录。历史数据会在首次运行后生成到程序目录旁的 data 文件夹。</p>
+            </article>
+            <article class="step">
+              <span class="step-number">3</span>
+              <p>如果更新到新版本后也想要之前的记录，只需下载新的压缩包后将 data 文件夹移至同一目录下即可。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="privacy">
+        <div class="section-inner">
+          <div class="privacy">
+            <h2>所有记录只存于该文件夹中。</h2>
+            <p>所有复制的内容缓存默认保存在程序目录旁的 data 文件夹。不会对C盘有占用。</p>
+            <p>不涉及任何对其他隐私的侵犯和读取。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Clipboard 1.0.0 · GitHub Pages + GitHub Releases</span>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var owner = "OWNER";
+      var repo = "REPO";
+      var host = window.location.hostname;
+      var pathParts = window.location.pathname.split("/").filter(Boolean);
+
+      if (host.endsWith(".github.io")) {
+        owner = host.replace(".github.io", "");
+        if (pathParts.length > 0) {
+          repo = pathParts[0];
+        }
+      }
+
+      var releaseBase = "https://github.com/" + owner + "/" + repo + "/releases";
+      var windowsUrl = releaseBase + "/latest/download/Clipboard-Windows.zip";
+      var macUrl = releaseBase + "/latest/download/Clipboard-macOS.zip";
+      var releaseUrl = releaseBase + "/latest";
+
+      var ids = ["windows-download", "windows-download-secondary"];
+      ids.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) {
+          el.href = windowsUrl;
+        }
+      });
+
+      var macIds = ["mac-download", "mac-download-secondary"];
+      macIds.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && !el.classList.contains("disabled")) {
+          el.href = macUrl;
+        }
+      });
+
+      var releaseLink = document.getElementById("release-link");
+      if (releaseLink) {
+        releaseLink.href = releaseUrl;
+      }
+    })();
+  </script>
+</body>
+</html>

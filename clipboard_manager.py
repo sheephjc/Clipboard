@@ -26,14 +26,26 @@ import tkinter as tk
 from html.parser import HTMLParser
 from tkinter import messagebox
 from typing import Callable
-import winreg
 
 from PIL import Image, ImageTk
-import win32api
-import win32clipboard
-import win32con
-import win32event
-import win32gui
+
+IS_WINDOWS = sys.platform.startswith("win")
+IS_MACOS = sys.platform == "darwin"
+
+if IS_WINDOWS:
+    import winreg
+    import win32api
+    import win32clipboard
+    import win32con
+    import win32event
+    import win32gui
+else:
+    winreg = None
+    win32api = None
+    win32clipboard = None
+    win32con = None
+    win32event = None
+    win32gui = None
 
 
 APP_VERSION = "1.0.0"
@@ -59,7 +71,7 @@ AUTO_DELETE_CHECK_INTERVAL_SECONDS = 300
 SINGLE_INSTANCE_MUTEX_NAME = f"Local\\{APP_ID}.Singleton"
 TRAY_WINDOW_CLASS_NAME = f"{APP_NAME}TrayWindow"
 TRAY_WINDOW_NAME = f"{APP_NAME}TrayHost"
-WAKE_INSTANCE_MESSAGE = win32api.RegisterWindowMessage(f"{APP_ID}.Wake")
+WAKE_INSTANCE_MESSAGE = win32api.RegisterWindowMessage(f"{APP_ID}.Wake") if IS_WINDOWS else 0
 ERROR_ALREADY_EXISTS = 183
 AUTO_DELETE_POLICIES = {
     "off": {"label": "不自动删除", "short_label": "关", "days": None},
@@ -105,29 +117,36 @@ TYPE_COLORS = {
     "other": COLORS["text_other"],
 }
 
-STANDARD_FORMAT_NAMES = {
-    win32con.CF_TEXT: "CF_TEXT",
-    win32con.CF_BITMAP: "CF_BITMAP",
-    win32con.CF_METAFILEPICT: "CF_METAFILEPICT",
-    win32con.CF_SYLK: "CF_SYLK",
-    win32con.CF_DIF: "CF_DIF",
-    win32con.CF_TIFF: "CF_TIFF",
-    win32con.CF_OEMTEXT: "CF_OEMTEXT",
-    win32con.CF_DIB: "CF_DIB",
-    win32con.CF_PALETTE: "CF_PALETTE",
-    win32con.CF_PENDATA: "CF_PENDATA",
-    win32con.CF_RIFF: "CF_RIFF",
-    win32con.CF_WAVE: "CF_WAVE",
-    win32con.CF_UNICODETEXT: "CF_UNICODETEXT",
-    win32con.CF_ENHMETAFILE: "CF_ENHMETAFILE",
-    win32con.CF_HDROP: "CF_HDROP",
-    win32con.CF_LOCALE: "CF_LOCALE",
-    win32con.CF_DIBV5: "CF_DIBV5",
-}
-HTML_CLIPBOARD_FORMAT = win32clipboard.RegisterClipboardFormat("HTML Format")
-RTF_CLIPBOARD_FORMAT = win32clipboard.RegisterClipboardFormat("Rich Text Format")
-STANDARD_FORMAT_NAMES[HTML_CLIPBOARD_FORMAT] = "HTML Format"
-STANDARD_FORMAT_NAMES[RTF_CLIPBOARD_FORMAT] = "Rich Text Format"
+if IS_WINDOWS:
+    STANDARD_FORMAT_NAMES = {
+        win32con.CF_TEXT: "CF_TEXT",
+        win32con.CF_BITMAP: "CF_BITMAP",
+        win32con.CF_METAFILEPICT: "CF_METAFILEPICT",
+        win32con.CF_SYLK: "CF_SYLK",
+        win32con.CF_DIF: "CF_DIF",
+        win32con.CF_TIFF: "CF_TIFF",
+        win32con.CF_OEMTEXT: "CF_OEMTEXT",
+        win32con.CF_DIB: "CF_DIB",
+        win32con.CF_PALETTE: "CF_PALETTE",
+        win32con.CF_PENDATA: "CF_PENDATA",
+        win32con.CF_RIFF: "CF_RIFF",
+        win32con.CF_WAVE: "CF_WAVE",
+        win32con.CF_UNICODETEXT: "CF_UNICODETEXT",
+        win32con.CF_ENHMETAFILE: "CF_ENHMETAFILE",
+        win32con.CF_HDROP: "CF_HDROP",
+        win32con.CF_LOCALE: "CF_LOCALE",
+        win32con.CF_DIBV5: "CF_DIBV5",
+    }
+    HTML_CLIPBOARD_FORMAT = win32clipboard.RegisterClipboardFormat("HTML Format")
+    RTF_CLIPBOARD_FORMAT = win32clipboard.RegisterClipboardFormat("Rich Text Format")
+    PLAIN_TEXT_CLIPBOARD_FORMAT_NAME = "CF_UNICODETEXT"
+    STANDARD_FORMAT_NAMES[HTML_CLIPBOARD_FORMAT] = "HTML Format"
+    STANDARD_FORMAT_NAMES[RTF_CLIPBOARD_FORMAT] = "Rich Text Format"
+else:
+    STANDARD_FORMAT_NAMES = {}
+    HTML_CLIPBOARD_FORMAT = "public.html"
+    RTF_CLIPBOARD_FORMAT = "public.rtf"
+    PLAIN_TEXT_CLIPBOARD_FORMAT_NAME = "public.utf8-plain-text"
 HTML_FRAGMENT_START = "<!--StartFragment-->"
 HTML_FRAGMENT_END = "<!--EndFragment-->"
 FORMULA_COMPLEX_MARKERS = (
@@ -215,7 +234,11 @@ _RESOLVED_APP_DATA_DIR: Path | None = None
 
 
 def text_source_formats_json(has_rich_text: bool) -> str:
-    formats = [format_clipboard_name(win32con.CF_UNICODETEXT)]
+    formats = [
+        format_clipboard_name(win32con.CF_UNICODETEXT)
+        if IS_WINDOWS
+        else PLAIN_TEXT_CLIPBOARD_FORMAT_NAME
+    ]
     if has_rich_text:
         formats.extend(["HTML Format", "Rich Text Format"])
     return json_dumps(formats)
@@ -534,10 +557,32 @@ def scaled_icon_size(base_size: int, hwnd: int | None = None) -> int:
     return max(base_size, int(round(base_size * dpi / 96.0)))
 
 
-def small_shell_icon_size() -> int:
+def shell_icon_size(metric: int, base_size: int, hwnd: int | None = None) -> int:
+    if not IS_WINDOWS:
+        return scaled_icon_size(base_size, hwnd)
+
+    dpi = window_dpi(hwnd)
     with contextlib.suppress(Exception):
-        return int(win32api.GetSystemMetrics(win32con.SM_CXSMICON))
-    return 16
+        size = int(ctypes.windll.user32.GetSystemMetricsForDpi(metric, dpi))
+        if size > 0:
+            return size
+    with contextlib.suppress(Exception):
+        size = int(win32api.GetSystemMetrics(metric))
+        if size > 0:
+            return max(size, scaled_icon_size(base_size, hwnd))
+    return scaled_icon_size(base_size, hwnd)
+
+
+def small_shell_icon_size(hwnd: int | None = None) -> int:
+    if not IS_WINDOWS:
+        return scaled_icon_size(16, hwnd)
+    return shell_icon_size(win32con.SM_CXSMICON, 16, hwnd)
+
+
+def big_shell_icon_size(hwnd: int | None = None) -> int:
+    if not IS_WINDOWS:
+        return scaled_icon_size(32, hwnd)
+    return shell_icon_size(win32con.SM_CXICON, 32, hwnd)
 
 
 def load_image_safely(image_path: str | Path) -> Image.Image:
@@ -552,6 +597,8 @@ def is_startup_launch(argv: list[str] | None = None) -> bool:
 
 
 def maybe_relaunch_with_pythonw() -> bool:
+    if not IS_WINDOWS:
+        return False
     if getattr(sys, "frozen", False):
         return False
     if os.environ.get("CLIPBOARD_TRAY_RELAUNCHED") == "1":
@@ -581,6 +628,9 @@ def maybe_relaunch_with_pythonw() -> bool:
 
 
 def enable_windows_ui_features() -> None:
+    if not IS_WINDOWS:
+        return
+
     dpi_context_applied = False
     with contextlib.suppress(Exception):
         ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -601,8 +651,45 @@ def app_data_root() -> Path:
     return Path(os.environ.get("APPDATA", Path.home()))
 
 
+def portable_data_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "data"
+    return Path(__file__).resolve().parent / "data"
+
+
+def current_app_data_dir() -> Path:
+    return app_data_root() / APP_DIR_NAME
+
+
 def legacy_app_data_dir() -> Path:
     return app_data_root() / LEGACY_APP_DIR_NAME
+
+
+def clipboard_data_exists(data_dir: Path) -> bool:
+    image_dir = data_dir / "images"
+    has_images = False
+    if image_dir.exists():
+        with contextlib.suppress(Exception):
+            has_images = any(image_dir.iterdir())
+    return (data_dir / "history.db").exists() or has_images
+
+
+def migrate_clipboard_data(source_dir: Path, target_dir: Path) -> bool:
+    if not source_dir.exists():
+        return False
+    with contextlib.suppress(Exception):
+        if source_dir.resolve() == target_dir.resolve():
+            return False
+
+    try:
+        shutil.copytree(str(source_dir), str(target_dir), dirs_exist_ok=True)
+        return True
+    except Exception as exc:
+        print(
+            f"[{APP_NAME}] Failed to migrate app data from {source_dir} to {target_dir}: {exc}",
+            file=sys.stderr,
+        )
+        return False
 
 
 def app_data_dir() -> Path:
@@ -610,24 +697,18 @@ def app_data_dir() -> Path:
     if _RESOLVED_APP_DATA_DIR is not None:
         return _RESOLVED_APP_DATA_DIR
 
-    preferred_dir = app_data_root() / APP_DIR_NAME
-    legacy_dir = legacy_app_data_dir()
-
-    if preferred_dir.exists() or not legacy_dir.exists():
+    preferred_dir = portable_data_dir()
+    if clipboard_data_exists(preferred_dir):
         _RESOLVED_APP_DATA_DIR = preferred_dir
         return preferred_dir
 
-    try:
-        shutil.move(str(legacy_dir), str(preferred_dir))
-        _RESOLVED_APP_DATA_DIR = preferred_dir
-        return preferred_dir
-    except Exception as exc:
-        print(
-            f"[{APP_NAME}] Failed to migrate app data from {legacy_dir} to {preferred_dir}: {exc}",
-            file=sys.stderr,
-        )
-        _RESOLVED_APP_DATA_DIR = legacy_dir
-        return legacy_dir
+    for source_dir in (current_app_data_dir(), legacy_app_data_dir()):
+        if migrate_clipboard_data(source_dir, preferred_dir):
+            _RESOLVED_APP_DATA_DIR = preferred_dir
+            return preferred_dir
+
+    _RESOLVED_APP_DATA_DIR = preferred_dir
+    return preferred_dir
 
 
 class SingleInstanceGuard:
@@ -1208,6 +1289,8 @@ class RtfPreviewRenderer:
 def format_clipboard_name(format_id: int) -> str:
     if format_id in STANDARD_FORMAT_NAMES:
         return STANDARD_FORMAT_NAMES[format_id]
+    if not IS_WINDOWS:
+        return str(format_id)
     try:
         return win32clipboard.GetClipboardFormatName(format_id)
     except Exception:
@@ -1786,7 +1869,7 @@ class StartupManager:
 
 
 class TrayIcon:
-    WM_TRAYICON = win32con.WM_USER + 20
+    WM_TRAYICON = (win32con.WM_USER if IS_WINDOWS else 0) + 20
     COMMAND_BASE = 2000
 
     def __init__(
@@ -1976,9 +2059,160 @@ class TrayIcon:
         win32gui.DestroyMenu(menu)
 
 
+class NullStartupManager:
+    def is_enabled(self) -> bool:
+        return False
+
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled:
+            raise RuntimeError("This platform does not support startup registration yet.")
+
+
+class NullSingleInstanceGuard:
+    def acquire(self) -> bool:
+        return True
+
+    def release(self) -> None:
+        return
+
+
+class PlatformServices:
+    platform_name = "generic"
+
+    def app_data_dir(self) -> Path:
+        return app_data_dir()
+
+    def create_startup_manager(self):
+        return NullStartupManager()
+
+    def create_single_instance_guard(self):
+        return NullSingleInstanceGuard()
+
+    def signal_existing_instance(self, should_wake: bool = True) -> bool:
+        return False
+
+    def maybe_relaunch_with_pythonw(self) -> bool:
+        return False
+
+    def enable_ui_features(self) -> None:
+        return
+
+    def tray_icon_path(self) -> str | None:
+        preferred_icon = icon_variant_ico_path(small_shell_icon_size())
+        if preferred_icon.exists():
+            return str(preferred_icon)
+        if icon_ico_path().exists():
+            return str(icon_ico_path())
+        return None
+
+    def create_tray_icon(
+        self,
+        tooltip: str,
+        menu_factory: Callable[[], list[TrayMenuItem | None]],
+        default_action: Callable[[], None],
+        wake_action: Callable[[], None] | None = None,
+        icon_path: str | None = None,
+    ):
+        return None
+
+    def read_clipboard_capture(self) -> ClipboardCapture | None:
+        raise NotImplementedError
+
+    def read_clipboard_text_payload(self) -> RichTextPayload | None:
+        raise NotImplementedError
+
+    def set_clipboard_rich_text(
+        self,
+        plain_text: str,
+        html_content: str | None = None,
+        rtf_content: str | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    def set_clipboard_text(self, text: str) -> None:
+        self.set_clipboard_rich_text(text)
+
+    def set_clipboard_image(self, image_path: str) -> None:
+        raise NotImplementedError
+
+
+class WindowsPlatformServices(PlatformServices):
+    platform_name = "windows"
+
+    def create_startup_manager(self):
+        return StartupManager()
+
+    def create_single_instance_guard(self):
+        return SingleInstanceGuard(SINGLE_INSTANCE_MUTEX_NAME)
+
+    def signal_existing_instance(self, should_wake: bool = True) -> bool:
+        return signal_existing_instance(should_wake=should_wake)
+
+    def maybe_relaunch_with_pythonw(self) -> bool:
+        return maybe_relaunch_with_pythonw()
+
+    def enable_ui_features(self) -> None:
+        enable_windows_ui_features()
+
+    def create_tray_icon(
+        self,
+        tooltip: str,
+        menu_factory: Callable[[], list[TrayMenuItem | None]],
+        default_action: Callable[[], None],
+        wake_action: Callable[[], None] | None = None,
+        icon_path: str | None = None,
+    ):
+        return TrayIcon(
+            tooltip=tooltip,
+            menu_factory=menu_factory,
+            default_action=default_action,
+            wake_action=wake_action,
+            icon_path=icon_path,
+        )
+
+    def read_clipboard_capture(self) -> ClipboardCapture | None:
+        return read_clipboard_capture()
+
+    def read_clipboard_text_payload(self) -> RichTextPayload | None:
+        return read_clipboard_text_payload()
+
+    def set_clipboard_rich_text(
+        self,
+        plain_text: str,
+        html_content: str | None = None,
+        rtf_content: str | None = None,
+    ) -> None:
+        set_clipboard_rich_text(plain_text, html_content, rtf_content)
+
+    def set_clipboard_text(self, text: str) -> None:
+        set_clipboard_text(text)
+
+    def set_clipboard_image(self, image_path: str) -> None:
+        set_clipboard_image(image_path)
+
+
+def create_platform_services() -> PlatformServices:
+    if IS_MACOS:
+        try:
+            from platforms.macos.services import MacPlatformServices
+
+            return MacPlatformServices(
+                project_root=Path(__file__).resolve().parent,
+                startup_arg=STARTUP_ARG,
+            )
+        except Exception as exc:
+            print(f"[{APP_NAME}] Failed to initialize macOS services: {exc}", file=sys.stderr)
+    return WindowsPlatformServices() if IS_WINDOWS else PlatformServices()
+
+
 class ClipboardManagerApp(tk.Tk):
-    def __init__(self, launched_from_startup: bool = False):
+    def __init__(
+        self,
+        launched_from_startup: bool = False,
+        platform_services: PlatformServices | None = None,
+    ):
         super().__init__()
+        self.platform_services = platform_services or create_platform_services()
         self.launched_from_startup = launched_from_startup
         self.icon_ico = icon_ico_path()
         self.icon_png = icon_png_path()
@@ -1993,6 +2227,9 @@ class ClipboardManagerApp(tk.Tk):
         self.option_add("*Font", FONT_UI)
         self.window_icon_photo: ImageTk.PhotoImage | None = None
         self.window_icon_photos: list[ImageTk.PhotoImage] = []
+        self.window_shell_icon_handles: list[object] = []
+        self.window_shell_icon_hwnd: int | None = None
+        self.window_shell_icon_dpi: int | None = None
         self.header_icon_image: ImageTk.PhotoImage | None = None
         self.auto_delete_chip: tk.Frame | None = None
         self.auto_delete_chip_title: tk.Label | None = None
@@ -2006,8 +2243,8 @@ class ClipboardManagerApp(tk.Tk):
         self.pin_button: tk.Label | None = None
         self._configure_window_appearance()
 
-        self.store = ClipboardStore(app_data_dir())
-        self.startup_manager = StartupManager()
+        self.store = ClipboardStore(self.platform_services.app_data_dir())
+        self.startup_manager = self.platform_services.create_startup_manager()
 
         self.entries = self.store.load_entries()
         self.visible_entries: list[ClipboardEntry] = []
@@ -2062,26 +2299,26 @@ class ClipboardManagerApp(tk.Tk):
         self._apply_auto_delete_policy(force=True)
         self._refresh_list()
 
-        preferred_tray_icon = icon_variant_ico_path(small_shell_icon_size())
-        tray_icon_path = str(preferred_tray_icon if preferred_tray_icon.exists() else self.icon_ico) if (
-            preferred_tray_icon.exists() or self.icon_ico.exists()
-        ) else None
-        self.tray = TrayIcon(
+        tray_icon_path = self.platform_services.tray_icon_path()
+        self.tray = self.platform_services.create_tray_icon(
             tooltip=DISPLAY_NAME,
             menu_factory=self._build_tray_menu,
             default_action=lambda: self._queue_ui_action(self.toggle_window),
             wake_action=lambda: self._queue_ui_action(self._present_existing_instance),
             icon_path=tray_icon_path,
         )
-        try:
-            self.tray.start()
-        except Exception as exc:
-            self.tray = None
+        if self.tray is not None:
+            try:
+                self.tray.start()
+            except Exception as exc:
+                self.tray = None
+                self.show_window(center=True)
+                messagebox.showwarning(
+                    "\u6258\u76d8\u521d\u59cb\u5316\u5931\u8d25",
+                    f"\u6258\u76d8\u6ca1\u6709\u6210\u529f\u542f\u52a8\uff0c\u7a97\u53e3\u5c06\u76f4\u63a5\u663e\u793a\u3002\n\n{exc}",
+                )
+        else:
             self.show_window(center=True)
-            messagebox.showwarning(
-                "\u6258\u76d8\u521d\u59cb\u5316\u5931\u8d25",
-                f"\u6258\u76d8\u6ca1\u6709\u6210\u529f\u542f\u52a8\uff0c\u7a97\u53e3\u5c06\u76f4\u63a5\u663e\u793a\u3002\n\n{exc}",
-            )
 
         self.queue_after_id = self.after(QUEUE_POLL_MS, self._process_ui_queue)
         self.poll_after_id = self.after(POLL_INTERVAL_MS, self._poll_clipboard)
@@ -2092,6 +2329,7 @@ class ClipboardManagerApp(tk.Tk):
     def _configure_window_appearance(self) -> None:
         self._apply_tk_scaling()
         self.window_icon_photos = []
+        iconphoto_applied = False
 
         icon_sources = [
             icon_variant_png_path(16),
@@ -2109,13 +2347,99 @@ class ClipboardManagerApp(tk.Tk):
 
         if self.window_icon_photos:
             self.window_icon_photo = self.window_icon_photos[-1]
-            with contextlib.suppress(Exception):
+            try:
                 self.iconphoto(True, *self.window_icon_photos)
+                iconphoto_applied = True
+            except Exception:
+                iconphoto_applied = False
 
-        if self.icon_ico.exists():
+        if not iconphoto_applied and self.icon_ico.exists():
             with contextlib.suppress(Exception):
                 self.iconbitmap(str(self.icon_ico))
 
+        self.after_idle(self._apply_window_shell_icons)
+
+    def _load_window_shell_icon_handle(self, target_size: int):
+        if not IS_WINDOWS:
+            return None
+        if not self.icon_ico.exists():
+            return None
+        icon_size = closest_icon_size(target_size)
+        with contextlib.suppress(Exception):
+            icon_handle = win32gui.LoadImage(
+                0,
+                str(self.icon_ico),
+                win32con.IMAGE_ICON,
+                icon_size,
+                icon_size,
+                win32con.LR_LOADFROMFILE,
+            )
+            if icon_handle:
+                return icon_handle
+        return None
+
+    def _destroy_icon_handle(self, icon_handle) -> None:
+        if IS_WINDOWS and icon_handle:
+            with contextlib.suppress(Exception):
+                win32gui.DestroyIcon(icon_handle)
+
+    def _apply_window_shell_icons(self) -> None:
+        if not IS_WINDOWS:
+            return
+        if not self.icon_ico.exists():
+            return
+
+        try:
+            hwnd = int(self.winfo_id())
+        except Exception:
+            return
+        if not hwnd:
+            return
+
+        dpi = window_dpi(hwnd)
+        if (
+            self.window_shell_icon_handles
+            and self.window_shell_icon_hwnd == hwnd
+            and self.window_shell_icon_dpi == dpi
+        ):
+            return
+
+        small_icon = self._load_window_shell_icon_handle(small_shell_icon_size(hwnd))
+        big_icon = self._load_window_shell_icon_handle(big_shell_icon_size(hwnd))
+        if not small_icon and not big_icon:
+            return
+
+        previous_icons = self.window_shell_icon_handles
+        try:
+            if small_icon:
+                win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, small_icon)
+            if big_icon:
+                win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, big_icon)
+        except Exception:
+            self._destroy_icon_handle(small_icon)
+            self._destroy_icon_handle(big_icon)
+            return
+
+        self.window_shell_icon_handles = [icon for icon in (small_icon, big_icon) if icon]
+        self.window_shell_icon_hwnd = hwnd
+        self.window_shell_icon_dpi = dpi
+        for icon_handle in previous_icons:
+            if icon_handle not in self.window_shell_icon_handles:
+                self._destroy_icon_handle(icon_handle)
+
+    def _release_window_shell_icons(self) -> None:
+        if not IS_WINDOWS:
+            return
+        handles = getattr(self, "window_shell_icon_handles", [])
+        with contextlib.suppress(Exception):
+            hwnd = int(self.winfo_id())
+            win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, 0)
+            win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, 0)
+        for icon_handle in handles:
+            self._destroy_icon_handle(icon_handle)
+        self.window_shell_icon_handles = []
+        self.window_shell_icon_hwnd = None
+        self.window_shell_icon_dpi = None
 
     def _apply_tk_scaling(self) -> None:
         with contextlib.suppress(Exception):
@@ -2847,7 +3171,7 @@ class ClipboardManagerApp(tk.Tk):
             return
 
         try:
-            capture = read_clipboard_capture()
+            capture = self.platform_services.read_clipboard_capture()
             snapshot_key = capture.snapshot_key if capture is not None else None
 
             if snapshot_key != self.last_snapshot_key:
@@ -3677,7 +4001,7 @@ class ClipboardManagerApp(tk.Tk):
             return "break"
 
         try:
-            payload = read_clipboard_text_payload()
+            payload = self.platform_services.read_clipboard_text_payload()
         except Exception as exc:
             messagebox.showerror("粘贴失败", f"没有成功读取系统剪贴板。\n\n{exc}")
             return "break"
@@ -3702,14 +4026,18 @@ class ClipboardManagerApp(tk.Tk):
                 payload = self._selected_text_payload()
                 if payload is None or payload.plain_text == "":
                     payload = self._current_full_text_payload(entry)
-                set_clipboard_rich_text(payload.plain_text, payload.html_content, payload.rtf_content)
+                self.platform_services.set_clipboard_rich_text(
+                    payload.plain_text,
+                    payload.html_content,
+                    payload.rtf_content,
+                )
                 self.suppressed_snapshot_key = (
                     "text",
                     hash_rich_text(payload.plain_text, payload.html_content, payload.rtf_content),
                 )
             else:
                 selected_text = self.preview_text.selection_get()
-                set_clipboard_text(selected_text)
+                self.platform_services.set_clipboard_text(selected_text)
         except Exception as exc:
             messagebox.showerror("复制失败", f"没有成功写回系统剪贴板。\n\n{exc}")
             return "break"
@@ -3799,13 +4127,17 @@ class ClipboardManagerApp(tk.Tk):
         try:
             if entry.type == "text":
                 payload = self._current_full_text_payload(entry)
-                set_clipboard_rich_text(payload.plain_text, payload.html_content, payload.rtf_content)
+                self.platform_services.set_clipboard_rich_text(
+                    payload.plain_text,
+                    payload.html_content,
+                    payload.rtf_content,
+                )
                 self.suppressed_snapshot_key = (
                     "text",
                     hash_rich_text(payload.plain_text, payload.html_content, payload.rtf_content),
                 )
             elif entry.type == "image" and entry.image_path:
-                set_clipboard_image(entry.image_path)
+                self.platform_services.set_clipboard_image(entry.image_path)
                 self.suppressed_snapshot_key = entry.snapshot_key
             else:
                 return
@@ -3823,7 +4155,7 @@ class ClipboardManagerApp(tk.Tk):
             return
 
         try:
-            set_clipboard_text(source_text)
+            self.platform_services.set_clipboard_text(source_text)
         except Exception as exc:
             messagebox.showerror("复制失败", f"没有成功复制纯文本。\n\n{exc}")
             return
@@ -3903,6 +4235,7 @@ class ClipboardManagerApp(tk.Tk):
         if center or not self.window_has_been_presented:
             self._place_window_centered()
         self.deiconify()
+        self._apply_window_shell_icons()
         self.lift()
         self.attributes("-topmost", True)
         if self.is_pinned:
@@ -4006,25 +4339,33 @@ class ClipboardManagerApp(tk.Tk):
         self.store.close()
         self.destroy()
 
+    def destroy(self) -> None:
+        self._release_window_shell_icons()
+        super().destroy()
+
 
 def main() -> None:
+    platform_services = create_platform_services()
     launched_from_startup = is_startup_launch()
-    instance_guard: SingleInstanceGuard | None = None
+    instance_guard = None
 
     try:
         if launched_from_startup:
             sys.argv = [arg for arg in sys.argv if arg != STARTUP_ARG]
-        elif maybe_relaunch_with_pythonw():
+        elif platform_services.maybe_relaunch_with_pythonw():
             return
 
-        instance_guard = SingleInstanceGuard(SINGLE_INSTANCE_MUTEX_NAME)
+        instance_guard = platform_services.create_single_instance_guard()
         if not instance_guard.acquire():
             if not launched_from_startup:
-                signal_existing_instance(should_wake=True)
+                platform_services.signal_existing_instance(should_wake=True)
             return
 
-        enable_windows_ui_features()
-        app = ClipboardManagerApp(launched_from_startup=launched_from_startup)
+        platform_services.enable_ui_features()
+        app = ClipboardManagerApp(
+            launched_from_startup=launched_from_startup,
+            platform_services=platform_services,
+        )
         app.mainloop()
     finally:
         if instance_guard is not None:

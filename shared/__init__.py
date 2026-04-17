@@ -1,0 +1,2 @@
+"""Shared Clipboard application primitives."""
+

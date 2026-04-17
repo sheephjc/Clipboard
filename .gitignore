@@ -1,9 +1,12 @@
 __pycache__/
 *.py[cod]
+.DS_Store
 
 .venv/
 
 build/
 dist/
+data/
+release/
 
 .codex_backups/
