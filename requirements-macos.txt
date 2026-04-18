@@ -1,5 +1,6 @@
 Pillow>=10.0
 pyobjc-framework-Cocoa>=10.0
 rumps>=0.4.0
+rapidocr-onnxruntime>=1.4.0
+onnxruntime>=1.18.0
 pyinstaller>=6.0
-

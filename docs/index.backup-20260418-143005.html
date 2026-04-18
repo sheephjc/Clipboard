@@ -231,228 +231,6 @@
       color: #dbe8ff;
     }
 
-    .shot-stage {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 1596 / 1148;
-      border: 1px solid rgba(143, 166, 191, 0.42);
-      border-radius: 8px;
-      overflow: hidden;
-      background: #0a1628;
-    }
-
-    .shot-image {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      user-select: none;
-      -webkit-user-drag: none;
-      pointer-events: none;
-    }
-
-    .shot-hotspot-layer {
-      position: absolute;
-      inset: 0;
-    }
-
-    .shot-hotspot {
-      position: absolute;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      cursor: pointer;
-      outline: none;
-    }
-
-    .shot-hotspot:hover {
-      border: 0;
-      background: transparent;
-    }
-
-    .shot-hotspot.active {
-      border: 0;
-      background: transparent;
-    }
-
-    .shot-date-native-anchor {
-      position: absolute;
-      z-index: 0;
-      left: 37.47%;
-      top: 19.6%;
-      width: 8.77%;
-      height: 4.53%;
-      opacity: 0;
-      pointer-events: none;
-      color-scheme: light;
-      accent-color: #2f80ed;
-      background: #ffffff;
-      border: 1px solid #ffffff;
-      color: #111111;
-    }
-
-    .shot-popover {
-      position: absolute;
-      z-index: 5;
-      min-width: 200px;
-      max-width: min(84vw, 320px);
-      border: 1px solid rgba(122, 154, 194, 0.56);
-      border-radius: 8px;
-      background: rgba(11, 30, 55, 0.98);
-      box-shadow: 0 18px 42px rgba(9, 17, 31, 0.55);
-      padding: 10px;
-      color: #eef5ff;
-      display: grid;
-      gap: 10px;
-    }
-
-    .shot-popover[hidden] {
-      display: none;
-    }
-
-    .shot-popover h4 {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 700;
-      line-height: 1.25;
-    }
-
-    .shot-popover-row {
-      display: grid;
-      gap: 6px;
-    }
-
-    .shot-popover label {
-      font-size: 12px;
-      color: #c9d9f3;
-      line-height: 1.2;
-    }
-
-    .shot-popover select,
-    .shot-popover input {
-      width: 100%;
-      min-height: 32px;
-      border: 1px solid #345d8f;
-      border-radius: 6px;
-      background: #15345a;
-      color: #f6fbff;
-      padding: 0 8px;
-      font-family: inherit;
-      font-size: 13px;
-      letter-spacing: 0;
-      color-scheme: dark;
-      accent-color: #40c66b;
-    }
-
-    .shot-popover-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-
-    .shot-btn {
-      min-height: 32px;
-      border: 1px solid rgba(122, 154, 194, 0.6);
-      border-radius: 6px;
-      background: #1f456f;
-      color: #ecf3ff;
-      padding: 0 10px;
-      font-size: 12px;
-      font-weight: 700;
-      font-family: inherit;
-      letter-spacing: 0;
-      cursor: pointer;
-      transition: filter 120ms ease;
-    }
-
-    .shot-btn:hover {
-      filter: brightness(1.07);
-    }
-
-    .shot-btn.primary {
-      background: #e58752;
-      border-color: rgba(255, 205, 171, 0.82);
-      color: #142744;
-    }
-
-    .shot-overlay {
-      position: absolute;
-      inset: 0;
-      z-index: 7;
-      background: rgba(2, 10, 20, 0.6);
-      display: grid;
-      place-items: center;
-      padding: 12px;
-    }
-
-    .shot-overlay[hidden] {
-      display: none;
-    }
-
-    .shot-dialog {
-      width: min(420px, calc(100% - 10px));
-      border: 1px solid rgba(122, 154, 194, 0.62);
-      border-radius: 8px;
-      background: rgba(10, 28, 49, 0.98);
-      box-shadow: 0 20px 44px rgba(4, 12, 24, 0.6);
-      display: grid;
-      gap: 10px;
-      padding: 12px;
-    }
-
-    .shot-dialog-title {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 800;
-      color: #f2f8ff;
-      line-height: 1.2;
-    }
-
-    .shot-dialog-content {
-      margin: 0;
-      border: 1px solid rgba(122, 154, 194, 0.45);
-      border-radius: 6px;
-      background: #132d4f;
-      padding: 10px;
-      color: #f2f8ff;
-      font-family: "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
-      font-size: 13px;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      max-height: 280px;
-      overflow: auto;
-      letter-spacing: 0;
-    }
-
-    .shot-dialog-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-
-    .shot-status {
-      margin-top: 10px;
-      min-height: 34px;
-      border: 1px solid rgba(137, 161, 194, 0.36);
-      border-radius: 6px;
-      background: #132947;
-      color: #c8d8ef;
-      display: flex;
-      align-items: center;
-      padding: 6px 10px;
-      font-size: 13px;
-      line-height: 1.25;
-      letter-spacing: 0;
-    }
-
-    .demo-shell,
-    .demo-status-bar,
-    .demo-toast,
-    .demo-modal {
-      display: none !important;
-    }
-
     .demo-shell {
       display: grid;
       gap: 8px;
@@ -1277,7 +1055,6 @@
           <h1>查询剪贴板历史内容。</h1>
           <p class="lead">Clipboard 会记录文本、富文本、图片和文件路径。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。</p>
           <p class="lead">图片支持文字识别功能。</p>
-          <p class="lead">左侧示例图可以展示 Clipboard 的功能，并支持部分交互。</p>
           <div class="actions" id="download-actions">
             <a class="button primary" id="windows-download" href="#">下载 Windows 版</a>
             <a class="button secondary disabled" id="mac-download" href="#" aria-disabled="true">macOS 版准备中</a>
@@ -1286,39 +1063,6 @@
 
         <div class="hero-visual">
           <div class="product-shot" aria-label="Clipboard 交互演示">
-            <div class="shot-stage" id="shot-stage">
-              <img class="shot-image" id="shot-image" src="assets/clipboard_wenji.png" alt="Clipboard screenshot demo">
-              <input id="shot-date-input" class="shot-date-native-anchor" type="date" tabindex="-1" aria-hidden="true">
-              <div class="shot-hotspot-layer" id="shot-hotspot-layer"></div>
-
-              <div class="shot-popover" id="shot-auto-popover" hidden>
-                <h4>自动删除设置</h4>
-                <div class="shot-popover-row">
-                  <label for="shot-auto-period">删除周期</label>
-                  <select id="shot-auto-period">
-                    <option value="never">永不</option>
-                    <option value="day">每日</option>
-                    <option value="week">每周</option>
-                    <option value="month">每月</option>
-                  </select>
-                </div>
-                <div class="shot-popover-actions">
-                  <button type="button" class="shot-btn" data-action="auto-cancel">取消</button>
-                  <button type="button" class="shot-btn primary" data-action="auto-apply">确定</button>
-                </div>
-              </div>
-
-              <div class="shot-overlay" id="shot-overlay" hidden>
-                <div class="shot-dialog" id="shot-dialog">
-                  <div class="shot-dialog-title" id="shot-dialog-title"></div>
-                  <pre class="shot-dialog-content" id="shot-dialog-content"></pre>
-                  <div class="shot-dialog-actions">
-                    <button type="button" class="shot-btn primary" data-close-overlay="1">关闭</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="shot-status" id="shot-status"></div>
             <div class="demo-shell" id="demo-shell">
               <div class="demo-header">
                 <div class="demo-brand">
@@ -1512,425 +1256,552 @@
         releaseLink.href = releaseUrl;
       }
 
-      var stage = document.getElementById("shot-stage");
-      if (!stage) {
+      var demoRoot = document.getElementById("demo-shell");
+      if (!demoRoot) {
         return;
       }
 
-      var DEMO_IMAGES = {
-        text: "assets/clipboard_wenji.png",
-        favorite: "assets/clipboard_wenji.png",
-        image: "assets/clipboard_tupian.png?v=2.0.2",
-        other: "assets/clipboard_wenjian.png?v=2.0.2"
-      };
-
-      var ABOUT_LINES = [
-        "Version: 2.0.0",
-        "Author\uff1aHJC by codex",
-        "\u652f\u6301\u5f00\u673a\u81ea\u542f",
-        "\u652f\u6301\u81ea\u52a8\u5220\u9664",
-        "\u652f\u6301\u6536\u85cf",
-        "\u652f\u6301\u65e5\u671f\u7b5b\u9009",
-        "\u652f\u6301\u5728\u5185\u5bb9\u533a\u7f16\u8f91\u6587\u672c",
-        "\u652f\u6301\u5bcc\u6587\u672c\u548c\u7eaf\u6587\u672c\u590d\u5236",
-        "\u652f\u6301\u56fe\u7247\u5185\u6587\u5b57\u8bc6\u522b",
-        "\u5173\u95ed\u9875\u9762\u6216\u5f00\u673a\u81ea\u542f\u9690\u85cf\u4e8e\u53f3\u4e0b\u89d2\u4efb\u52a1\u680f\u6258\u76d8\u5904"
+      var initialRecords = [
+        {
+          id: "text-1",
+          type: "text",
+          title: "hello world!",
+          time: "20:19:00",
+          detail: "Editable text entry for quick reuse.",
+          contentLines: [
+            "hello world!",
+            "Edit text then copy again with shortcuts and formatting support.",
+            "Useful when refining pasted AI answers, formulas, and notes.",
+            "More Markdown and LaTeX enhancements are planned."
+          ],
+          isFavorite: true,
+          ocrText: ""
+        },
+        {
+          id: "image-1",
+          type: "image",
+          title: "Image 1437x998",
+          time: "21:02:13",
+          detail: "Image entry with manual OCR preview.",
+          contentLines: [
+            "Image record sample",
+            "Size: 1437 x 998",
+            "Actions: copy back and OCR text recognition.",
+            "OCR sample: Auto cleanup / Startup / Listening"
+          ],
+          isFavorite: false,
+          ocrText: "Auto cleanup: week\nStartup enabled\nListening\nhello world!"
+        },
+        {
+          id: "other-1",
+          type: "other",
+          title: "File/Folder x1",
+          time: "21:02:29",
+          detail: "File and folder path history sample.",
+          contentLines: [
+            "File path record sample",
+            "C:\\Users\\HJC\\Desktop\\assets\\charts",
+            "D:\\Work\\Report\\Draft.docx",
+            "Copy any path back to clipboard for reuse."
+          ],
+          isFavorite: false,
+          ocrText: ""
+        }
       ];
 
-      var ACTION_FEEDBACK = {
-        clear: "\u793a\u4f8b\u4e0d\u652f\u6301\u6e05\u7a7a\u5386\u53f2\u7684\u4ea4\u4e92~",
-        copy: "\u6a21\u62df\u590d\u5236\u5230\u526a\u8d34\u677f\uff0c\u5b9e\u9645\u4e0a\u6ca1\u6709\u590d\u5236~",
-        copyText: "\u6a21\u62df\u590d\u5236\u7eaf\u6587\u672c\uff0c\u5b9e\u9645\u4e0a\u6ca1\u6709\u590d\u5236~",
-        delete: "\u793a\u4f8b\u4e0d\u652f\u6301\u5220\u9664\u8bb0\u5f55\u7684\u4ea4\u4e92~"
+      var state = {
+        records: cloneRecords(initialRecords),
+        filters: {
+          category: "all",
+          search: "",
+          sort: "date_desc"
+        },
+        ui: {
+          selectedId: "text-1",
+          statusMessage: "Demo mode ready. Click tabs and records to switch examples."
+        },
+        toggles: {
+          autoDelete: true,
+          startup: true,
+          listening: true,
+          pinned: false
+        }
       };
 
-      var OCR_SAMPLE = [
-        "查询剪贴板历史内容。",
-        "Clipboard 会记录文本、富文本、图片和文件路径。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。",
-        "图片支持文字识别功能。"
-      ].join("\n");
-
-      var RECORDS = {
-        text: { type: "text", title: "\u6587\u672c\u8bb0\u5f55" },
-        image: { type: "image", title: "\u56fe\u7247\u8bb0\u5f55" },
-        other: { type: "other", title: "\u6587\u4ef6/\u6587\u4ef6\u5939\u8bb0\u5f55" }
+      var elements = {
+        tabs: document.getElementById("demo-tabs"),
+        list: document.getElementById("demo-list"),
+        search: document.getElementById("demo-search-input"),
+        summary: document.getElementById("demo-summary"),
+        previewType: document.getElementById("demo-preview-type"),
+        previewTime: document.getElementById("demo-preview-time"),
+        previewTitle: document.getElementById("demo-preview-title"),
+        previewBody: document.getElementById("demo-preview-body"),
+        previewDetail: document.getElementById("demo-preview-detail"),
+        actions: document.getElementById("demo-actions"),
+        statusBar: document.getElementById("demo-status-bar"),
+        toast: document.getElementById("demo-toast"),
+        topbar: document.getElementById("demo-topbar"),
+        sort: document.getElementById("demo-sort"),
+        toggleClean: document.getElementById("demo-toggle-clean"),
+        toggleStartup: document.getElementById("demo-toggle-startup"),
+        toggleListening: document.getElementById("demo-toggle-listening"),
+        togglePin: document.getElementById("demo-toggle-pin"),
+        helpModal: document.getElementById("demo-help-modal"),
+        ocrModal: document.getElementById("demo-ocr-modal"),
+        ocrText: document.getElementById("demo-ocr-text")
       };
 
-      var HOTSPOTS = [
-        { id: "help", action: "about", x: 94.67, y: 1.74, w: 1.75, h: 3.66, label: "Help" },
-        { id: "auto-delete", action: "auto-settings", x: 58.27, y: 1.48, w: 13.03, h: 5.40, label: "Auto Delete" },
-        { id: "date-filter", action: "date-settings", x: 37.47, y: 19.60, w: 8.77, h: 4.53, label: "Date Filter" },
-
-        { id: "cat-all", action: "category", value: "all", x: 1.12, y: 19.60, w: 6.55, h: 4.53, label: "All" },
-        { id: "cat-text", action: "category", value: "text", x: 8.27, y: 19.60, w: 6.55, h: 4.53, label: "Text" },
-        { id: "cat-image", action: "category", value: "image", x: 15.42, y: 19.60, w: 6.55, h: 4.53, label: "Image" },
-        { id: "cat-other", action: "category", value: "other", x: 22.57, y: 19.60, w: 6.55, h: 4.53, label: "Other" },
-        { id: "cat-favorite", action: "category", value: "favorite", x: 29.72, y: 19.60, w: 6.55, h: 4.53, label: "Favorite" },
-
-        { id: "record-image", action: "record", value: "image", x: 1.69, y: 31.28, w: 26.06, h: 3.25, label: "Image Record" },
-        { id: "record-other", action: "record", value: "other", x: 1.69, y: 34.84, w: 26.06, h: 3.25, label: "Other Record" },
-        { id: "record-text", action: "record", value: "text", x: 1.69, y: 38.41, w: 26.06, h: 3.25, label: "Text Record" },
-
-        { id: "btn-clear", action: "button", value: "clear", x: 1.12, y: 92.02, w: 25.75, h: 7.06, label: "Clear History" },
-        { id: "btn-copy", action: "button", value: "copy", x: 28.57, y: 92.02, w: 24.69, h: 7.06, label: "Copy Clipboard" },
-        { id: "btn-copy-text", action: "button", value: "copyText", x: 53.70, y: 92.02, w: 15.41, h: 7.06, label: "Copy Text" },
-        { id: "btn-ocr", action: "button", value: "ocr", x: 69.67, y: 92.02, w: 15.35, h: 7.06, label: "OCR" },
-        { id: "btn-delete", action: "button", value: "delete", x: 85.58, y: 92.02, w: 12.53, h: 7.06, label: "Delete Record" }
-      ];
-
-      var demoState = {
-        selectedCategory: "all",
-        selectedRecord: "text",
-        selectedDate: "",
-        autoDeletePeriod: "week",
-        modal: { type: null },
-        statusText: "\u6f14\u793a\u5c31\u7eea\uff0c\u53ef\u70b9\u51fb\u622a\u56fe\u6309\u94ae\u4f53\u9a8c\u4ea4\u4e92\u3002"
-      };
-
-      var hotspotMap = {};
-
-      var els = {
-        stage: stage,
-        image: document.getElementById("shot-image"),
-        layer: document.getElementById("shot-hotspot-layer"),
-        status: document.getElementById("shot-status"),
-        overlay: document.getElementById("shot-overlay"),
-        dialogTitle: document.getElementById("shot-dialog-title"),
-        dialogContent: document.getElementById("shot-dialog-content"),
-        dateInput: document.getElementById("shot-date-input"),
-        autoPopover: document.getElementById("shot-auto-popover"),
-        autoPeriod: document.getElementById("shot-auto-period")
-      };
-
-      if (!els.image || !els.layer || !els.status) {
+      if (!elements.tabs || !elements.list || !elements.actions || !elements.search) {
         return;
       }
 
-      buildHotspots();
+      var categoryLabels = {
+        all: "All",
+        text: "Text",
+        image: "Image",
+        other: "Other",
+        favorite: "Favorite"
+      };
+
+      var actionButtons = {};
+      Array.prototype.forEach.call(elements.actions.querySelectorAll(".demo-action"), function (button) {
+        var action = button.getAttribute("data-action");
+        if (action) {
+          actionButtons[action] = button;
+        }
+      });
+
+      var toastTimer = null;
       bindEvents();
       render();
 
-      function buildHotspots() {
-        HOTSPOTS.forEach(function (hotspot) {
-          hotspotMap[hotspot.id] = hotspot;
-          var button = document.createElement("button");
-          button.type = "button";
-          button.className = "shot-hotspot";
-          button.style.left = hotspot.x + "%";
-          button.style.top = hotspot.y + "%";
-          button.style.width = hotspot.w + "%";
-          button.style.height = hotspot.h + "%";
-          button.dataset.hotspotId = hotspot.id;
-          button.dataset.action = hotspot.action;
-          if (hotspot.value !== undefined) {
-            button.dataset.value = hotspot.value;
-          }
-          button.setAttribute("aria-label", hotspot.label);
-          els.layer.appendChild(button);
+      function cloneRecords(records) {
+        return records.map(function (record) {
+          return {
+            id: record.id,
+            type: record.type,
+            title: record.title,
+            time: record.time,
+            detail: record.detail,
+            contentLines: record.contentLines ? record.contentLines.slice() : [],
+            isFavorite: record.isFavorite,
+            ocrText: record.ocrText
+          };
         });
       }
 
       function bindEvents() {
-        els.layer.addEventListener("click", function (event) {
-          var target = event.target.closest(".shot-hotspot");
-          if (!target) {
+        elements.tabs.addEventListener("click", function (event) {
+          var button = event.target.closest(".demo-tab");
+          if (!button) {
             return;
           }
-          var hotspotId = target.dataset.hotspotId;
-          var hotspot = hotspotMap[hotspotId];
-          if (!hotspot) {
-            return;
-          }
-          handleHotspotAction(hotspot);
+          setCategory(button.getAttribute("data-category"));
         });
 
-        document.addEventListener("click", function (event) {
-          var actionNode = event.target.closest("[data-action]");
-          if (actionNode) {
-            var action = actionNode.getAttribute("data-action");
-            if (action === "auto-apply") {
-              applyAutoDelete();
-              return;
-            }
-            if (action === "auto-cancel") {
-              hidePopovers();
-              setStatus("\u5df2\u53d6\u6d88\u81ea\u52a8\u5220\u9664\u8bbe\u7f6e\u4fee\u6539\u3002");
-              render();
-              return;
-            }
-          }
-
-          if (event.target.closest("[data-close-overlay]")) {
-            closeOverlay();
+        elements.list.addEventListener("click", function (event) {
+          var row = event.target.closest(".demo-list-item[data-id]");
+          if (!row) {
             return;
           }
-
-          if (event.target === els.overlay) {
-            closeOverlay();
-            return;
-          }
-
-          var insideAuto = event.target.closest("#shot-auto-popover");
-          var autoButton = event.target.closest('.shot-hotspot[data-action="auto-settings"]');
-          if (!insideAuto && !autoButton) {
-            hidePopovers();
-          }
+          state.ui.selectedId = row.getAttribute("data-id");
+          setStatus("Selected: " + row.getAttribute("data-title"));
+          render();
         });
 
-        if (els.dateInput) {
-          els.dateInput.addEventListener("change", function () {
-            demoState.selectedDate = els.dateInput.value || "";
+        elements.search.addEventListener("input", function () {
+          state.filters.search = elements.search.value.trim().toLowerCase();
+          render();
+          setStatus(state.filters.search ? "Filtering by keyword." : "Search cleared.");
+        });
+
+        if (elements.sort) {
+          elements.sort.addEventListener("click", function () {
+            state.filters.sort = state.filters.sort === "date_desc" ? "date_asc" : "date_desc";
+            setStatus(state.filters.sort === "date_desc" ? "Sorted by date: newest first." : "Sorted by date: oldest first.");
             render();
           });
         }
-      }
 
-      function handleHotspotAction(hotspot) {
-        if (hotspot.action === "about") {
-          openOverlay("\u5173\u4e8e\u526a\u8d34\u677f", ABOUT_LINES.join("\n"), "about");
-          return;
-        }
-
-        if (hotspot.action === "date-settings") {
-          openNativeDatePicker();
-          return;
-        }
-
-        if (hotspot.action === "auto-settings") {
-          openAutoPopover(hotspot);
-          return;
-        }
-
-        if (hotspot.action === "category") {
-          demoState.selectedCategory = hotspot.value;
-          if (hotspot.value === "favorite" || hotspot.value === "text") {
-            demoState.selectedRecord = "text";
-          } else if (hotspot.value === "image") {
-            demoState.selectedRecord = "image";
-          } else if (hotspot.value === "other") {
-            demoState.selectedRecord = "other";
-          }
-          hidePopovers();
-          setStatus("\u5206\u7c7b\u5207\u6362\u4e3a\u300c" + categoryLabel(hotspot.value) + "\u300d\u3002");
-          render();
-          return;
-        }
-
-        if (hotspot.action === "record") {
-          demoState.selectedCategory = hotspot.value;
-          demoState.selectedRecord = hotspot.value;
-          hidePopovers();
-          setStatus("\u5f53\u524d\u8bb0\u5f55\u4e3a\u300c" + recordLabel(hotspot.value) + "\u300d\u3002");
-          render();
-          return;
-        }
-
-        if (hotspot.action === "button") {
-          runBottomAction(hotspot.value);
-        }
-      }
-
-      function runBottomAction(action) {
-        hidePopovers();
-        if (action === "ocr") {
-          if (getCurrentImageKey() !== "image") {
-            setStatus("\u8bf7\u5148\u9009\u4e2d\u56fe\u7247\u8bb0\u5f55\u518d\u8bc6\u522b\u3002");
-            render();
+        elements.actions.addEventListener("click", function (event) {
+          var button = event.target.closest(".demo-action[data-action]");
+          if (!button || button.disabled) {
             return;
           }
-          openOverlay("\u8bc6\u522b\u7ed3\u679c", OCR_SAMPLE, "ocr");
-          setStatus("\u5df2\u5b8c\u6210\u6f14\u793a OCR \u8bc6\u522b\u3002");
-          return;
-        }
+          handleAction(button.getAttribute("data-action"));
+        });
 
-        if (ACTION_FEEDBACK[action]) {
-          setStatus(ACTION_FEEDBACK[action]);
-        } else {
-          setStatus("\u64cd\u4f5c\u5df2\u6267\u884c\u3002");
-        }
-        render();
-      }
-
-      function openNativeDatePicker() {
-        hidePopovers();
-        if (!els.dateInput) {
-          return;
-        }
-        els.dateInput.value = demoState.selectedDate || "";
-        render();
-        if (typeof els.dateInput.showPicker === "function") {
-          try {
-            els.dateInput.showPicker();
+        elements.topbar.addEventListener("click", function (event) {
+          var button = event.target.closest("[data-action]");
+          if (!button) {
             return;
-          } catch (error) {
-            // fall through
           }
-        }
-        els.dateInput.focus();
-        els.dateInput.click();
-      }
+          handleTopbarAction(button.getAttribute("data-action"));
+        });
 
-      function openAutoPopover(hotspot) {
-        hidePopovers();
-        els.autoPeriod.value = demoState.autoDeletePeriod;
-        positionPopover(els.autoPopover, hotspot, "center", 2);
-        render();
-      }
-
-      function applyAutoDelete() {
-        demoState.autoDeletePeriod = els.autoPeriod.value || "never";
-        hidePopovers();
-        render();
-      }
-
-      function positionPopover(popover, hotspot, align, offsetY) {
-        if (!popover) {
-          return;
-        }
-        popover.hidden = false;
-        popover.style.left = "8px";
-        popover.style.top = "8px";
-        var stageRect = els.stage.getBoundingClientRect();
-        var popRect = popover.getBoundingClientRect();
-        var hotspotLeft = (hotspot.x / 100) * stageRect.width;
-        var hotspotWidth = (hotspot.w / 100) * stageRect.width;
-        var left = hotspotLeft;
-        if (align === "center") {
-          left = hotspotLeft + (hotspotWidth - popRect.width) / 2;
-        } else if (align === "right") {
-          left = hotspotLeft + hotspotWidth - popRect.width;
-        }
-        var top = ((hotspot.y + hotspot.h) / 100) * stageRect.height + (offsetY || 2);
-        if (left + popRect.width > stageRect.width - 8) {
-          left = stageRect.width - popRect.width - 8;
-        }
-        if (left < 8) {
-          left = 8;
-        }
-        if (top + popRect.height > stageRect.height - 8) {
-          top = stageRect.height - popRect.height - 8;
-        }
-        if (top < 8) {
-          top = 8;
-        }
-        popover.style.left = left + "px";
-        popover.style.top = top + "px";
-      }
-
-      function hidePopovers() {
-        if (els.autoPopover) {
-          els.autoPopover.hidden = true;
-        }
-      }
-
-      function openOverlay(title, content, type) {
-        hidePopovers();
-        if (!els.overlay || !els.dialogTitle || !els.dialogContent) {
-          return;
-        }
-        els.dialogTitle.textContent = title;
-        els.dialogContent.textContent = content;
-        els.overlay.hidden = false;
-        demoState.modal.type = type;
-        render();
-      }
-
-      function closeOverlay() {
-        if (!els.overlay) {
-          return;
-        }
-        els.overlay.hidden = true;
-        demoState.modal.type = null;
-        setStatus("\u5df2\u5173\u95ed\u5f39\u7a97\u3002");
-        render();
-      }
-
-      function render() {
-        renderImage();
-        renderHotspotState();
-        renderStatus();
-      }
-
-      function renderImage() {
-        var key = getCurrentImageKey();
-        var src = DEMO_IMAGES[key] || DEMO_IMAGES.text;
-        if (els.image.getAttribute("src") !== src) {
-          els.image.setAttribute("src", src);
-        }
-      }
-
-      function renderHotspotState() {
-        var nodes = els.layer.querySelectorAll(".shot-hotspot");
-        nodes.forEach(function (node) {
-          var action = node.dataset.action;
-          var value = node.dataset.value;
-          var isActive = false;
-          if (action === "category") {
-            isActive = value === demoState.selectedCategory;
-          } else if (action === "record") {
-            isActive = value === demoState.selectedRecord;
-          } else if (action === "auto-settings") {
-            isActive = !els.autoPopover.hidden;
-          } else if (action === "about") {
-            isActive = demoState.modal.type === "about";
+        document.addEventListener("click", function (event) {
+          var modalAction = event.target.closest(".demo-modal-btn[data-action]");
+          if (!modalAction) {
+            return;
           }
-          node.classList.toggle("active", isActive);
+          var action = modalAction.getAttribute("data-action");
+          if (action === "close-help") {
+            elements.helpModal.hidden = true;
+            setStatus("Help closed.");
+          } else if (action === "close-ocr") {
+            elements.ocrModal.hidden = true;
+            setStatus("OCR panel closed.");
+          } else if (action === "copy-ocr") {
+            var text = elements.ocrText.textContent.trim();
+            if (text) {
+              showToast("OCR text copied (demo)");
+              setStatus("Simulated OCR text copy.");
+            } else {
+              showToast("No OCR text to copy");
+            }
+          }
         });
       }
 
-      function renderStatus() {
-        if (!els.status) {
+      function handleTopbarAction(action) {
+        if (action === "toggle-clean") {
+          state.toggles.autoDelete = !state.toggles.autoDelete;
+          setStatus(state.toggles.autoDelete ? "Auto cleanup set to week." : "Auto cleanup disabled.");
+          showToast(state.toggles.autoDelete ? "Auto cleanup: week" : "Auto cleanup: off");
+          renderTopbar();
           return;
         }
-        els.status.textContent = demoState.statusText;
+
+        if (action === "toggle-startup") {
+          state.toggles.startup = !state.toggles.startup;
+          setStatus(state.toggles.startup ? "Startup enabled (demo)." : "Startup disabled (demo).");
+          showToast(state.toggles.startup ? "Startup: on" : "Startup: off");
+          renderTopbar();
+          return;
+        }
+
+        if (action === "toggle-listening") {
+          state.toggles.listening = !state.toggles.listening;
+          setStatus(state.toggles.listening ? "Listening is active." : "Listening is paused.");
+          showToast(state.toggles.listening ? "Listening" : "Paused");
+          renderTopbar();
+          return;
+        }
+
+        if (action === "show-help") {
+          elements.helpModal.hidden = false;
+          elements.ocrModal.hidden = true;
+          setStatus("Help opened.");
+          return;
+        }
+
+        if (action === "toggle-pin") {
+          state.toggles.pinned = !state.toggles.pinned;
+          setStatus(state.toggles.pinned ? "Pinned preview area." : "Unpinned preview area.");
+          showToast(state.toggles.pinned ? "Pinned" : "Unpinned");
+          renderTopbar();
+        }
       }
 
-      function setStatus(text) {
-        demoState.statusText = text;
+      function handleAction(action) {
+        var visible = getFilteredRecords();
+        var selected = getSelectedRecord(visible);
+
+        if (action === "clear-history") {
+          showToast("Clear history simulated");
+          setStatus("Clear history is demo-only.");
+          return;
+        }
+
+        if (!selected) {
+          showToast("No record available");
+          setStatus("No item under current filter.");
+          return;
+        }
+
+        if (action === "copy") {
+          showToast("Copied to clipboard (demo)");
+          setStatus("Simulated copy: " + selected.title);
+          return;
+        }
+
+        if (action === "copy-text") {
+          if (selected.type !== "text") {
+            showToast("Text copy works only for text type");
+            setStatus("Select a text record first.");
+            return;
+          }
+          showToast("Plain text copied (demo)");
+          setStatus("Simulated plain text copy.");
+          return;
+        }
+
+        if (action === "ocr") {
+          if (selected.type !== "image") {
+            showToast("OCR works only for image type");
+            setStatus("Select an image record first.");
+            return;
+          }
+          if (!selected.ocrText) {
+            showToast("No text recognized");
+            setStatus("No OCR text in this sample.");
+            return;
+          }
+          elements.ocrText.textContent = selected.ocrText;
+          elements.ocrModal.hidden = false;
+          elements.helpModal.hidden = true;
+          setStatus("OCR demo result opened.");
+          return;
+        }
+
+        if (action === "delete") {
+          state.records = state.records.filter(function (record) {
+            return record.id !== selected.id;
+          });
+          showToast("Record deleted from demo list");
+          setStatus("Deleted: " + selected.title);
+          render();
+        }
       }
 
-      function getCurrentImageKey() {
-        if (demoState.selectedCategory === "text") {
-          return "text";
-        }
-        if (demoState.selectedCategory === "image") {
-          return "image";
-        }
-        if (demoState.selectedCategory === "other") {
-          return "other";
-        }
-        if (demoState.selectedCategory === "favorite") {
-          return "favorite";
-        }
-        var selected = RECORDS[demoState.selectedRecord] || RECORDS.text;
-        return selected.type;
+      function render() {
+        var filtered = getFilteredRecords();
+        ensureSelected(filtered);
+        filtered = getFilteredRecords();
+        var selected = getSelectedRecord(filtered);
+        renderTopbar();
+        renderTabs();
+        renderSort();
+        renderSummary(filtered);
+        renderList(filtered);
+        renderPreview(selected);
+        renderActionState(selected);
+        renderStatus();
       }
 
-      function categoryLabel(category) {
-        if (category === "all") {
-          return "\u5168\u90e8";
-        }
-        if (category === "text") {
-          return "\u6587\u672c";
-        }
-        if (category === "image") {
-          return "\u56fe\u7247";
-        }
-        if (category === "other") {
-          return "\u5176\u4ed6";
-        }
-        if (category === "favorite") {
-          return "\u6536\u85cf";
-        }
-        return "\u5206\u7c7b";
+      function renderTopbar() {
+        elements.toggleClean.textContent = state.toggles.autoDelete ? "Auto Cleanup: Week" : "Auto Cleanup: Off";
+        elements.toggleStartup.textContent = state.toggles.startup ? "Startup On" : "Startup Off";
+        elements.toggleListening.textContent = state.toggles.listening ? "Listening" : "Paused";
+
+        elements.toggleClean.classList.toggle("off", !state.toggles.autoDelete);
+        elements.toggleStartup.classList.toggle("off", !state.toggles.startup);
+        elements.toggleListening.classList.toggle("off", !state.toggles.listening);
+
+        elements.togglePin.classList.toggle("active", state.toggles.pinned);
+        elements.togglePin.textContent = state.toggles.pinned ? "\u2605" : "\u2606";
       }
 
-      function recordLabel(recordId) {
-        var record = RECORDS[recordId];
-        if (!record) {
-          return "\u8bb0\u5f55";
+      function renderSort() {
+        if (!elements.sort) {
+          return;
         }
-        return record.title;
+        elements.sort.textContent = state.filters.sort === "date_desc" ? "Sort: Date (Desc)" : "Sort: Date (Asc)";
+      }
+
+      function renderTabs() {
+        var counts = getCategoryCounts();
+        Array.prototype.forEach.call(elements.tabs.querySelectorAll(".demo-tab"), function (button) {
+          var category = button.getAttribute("data-category");
+          button.classList.toggle("active", category === state.filters.category);
+          var countNode = button.querySelector(".demo-tab-count");
+          if (countNode) {
+            countNode.textContent = counts[category];
+          }
+        });
+      }
+
+      function renderSummary(filtered) {
+        var label = categoryLabels[state.filters.category] || "All";
+        elements.summary.textContent = label + ": " + filtered.length + " shown (" + state.records.length + " total)";
+      }
+
+      function renderList(filtered) {
+        if (!filtered.length) {
+          elements.list.innerHTML = "<button class=\"demo-list-item empty\" type=\"button\" disabled>No records under this filter</button>";
+          return;
+        }
+
+        elements.list.innerHTML = filtered.map(function (record) {
+          var selected = record.id === state.ui.selectedId ? " selected" : "";
+          var star = record.isFavorite ? "\u2605" : "\u2606";
+          return "" +
+            "<button class=\"demo-list-item" + selected + "\" data-id=\"" + escapeHtml(record.id) + "\" data-title=\"" + escapeHtml(record.title) + "\" type=\"button\">" +
+              "<div class=\"demo-list-meta\"><span>[" + escapeHtml(record.time) + "] " + escapeHtml(typeLabel(record.type)) + "</span><span>" + star + "</span></div>" +
+              "<div>" + escapeHtml(record.title) + "</div>" +
+            "</button>";
+        }).join("");
+      }
+
+      function renderPreview(selected) {
+        if (!selected) {
+          elements.previewType.textContent = "Type: -";
+          elements.previewTime.textContent = "Time: -";
+          elements.previewTitle.textContent = "No record";
+          elements.previewDetail.textContent = "Switch category or clear search.";
+          if (elements.previewBody) {
+            elements.previewBody.innerHTML = "<p class=\"demo-content-line\">No content available for this filter.</p>";
+          }
+          return;
+        }
+
+        elements.previewType.textContent = "Type: " + typeLabel(selected.type);
+        elements.previewTime.textContent = "Time: " + selected.time;
+        elements.previewTitle.textContent = selected.title;
+        elements.previewDetail.textContent = selected.detail;
+        if (elements.previewBody) {
+          var lines = selected.contentLines && selected.contentLines.length ? selected.contentLines : ["No content"];
+          elements.previewBody.innerHTML = lines.map(function (line, index) {
+            var cls = index === 0 ? "demo-content-line headline" : "demo-content-line";
+            return "<p class=\"" + cls + "\">" + escapeHtml(line) + "</p>";
+          }).join("");
+        }
+      }
+
+      function renderActionState(selected) {
+        if (actionButtons.copy) {
+          actionButtons.copy.disabled = !selected;
+        }
+        if (actionButtons["copy-text"]) {
+          actionButtons["copy-text"].disabled = !selected || selected.type !== "text";
+        }
+        if (actionButtons.ocr) {
+          actionButtons.ocr.disabled = !selected || selected.type !== "image";
+        }
+        if (actionButtons.delete) {
+          actionButtons.delete.disabled = !selected;
+        }
+      }
+
+      function renderStatus() {
+        if (elements.statusBar) {
+          elements.statusBar.textContent = state.ui.statusMessage;
+        }
+      }
+
+      function setCategory(category) {
+        if (!categoryLabels[category]) {
+          return;
+        }
+        state.filters.category = category;
+        setStatus("Category switched to: " + categoryLabels[category]);
+        render();
+      }
+
+      function setStatus(message) {
+        state.ui.statusMessage = message;
+        renderStatus();
+      }
+
+      function showToast(message) {
+        if (!elements.toast) {
+          return;
+        }
+        elements.toast.textContent = message;
+        elements.toast.classList.add("show");
+        if (toastTimer) {
+          clearTimeout(toastTimer);
+        }
+        toastTimer = setTimeout(function () {
+          elements.toast.classList.remove("show");
+        }, 1700);
+      }
+
+      function getCategoryCounts() {
+        var searched = state.records.filter(function (record) {
+          return matchesSearch(record, state.filters.search);
+        });
+        return {
+          all: searched.length,
+          text: searched.filter(function (record) { return record.type === "text"; }).length,
+          image: searched.filter(function (record) { return record.type === "image"; }).length,
+          other: searched.filter(function (record) { return record.type === "other"; }).length,
+          favorite: searched.filter(function (record) { return record.isFavorite; }).length
+        };
+      }
+
+      function getFilteredRecords() {
+        return state.records
+          .filter(function (record) {
+            return matchesSearch(record, state.filters.search);
+          })
+          .filter(function (record) {
+            if (state.filters.category === "all") {
+              return true;
+            }
+            if (state.filters.category === "favorite") {
+              return record.isFavorite;
+            }
+            return record.type === state.filters.category;
+          })
+          .sort(function (a, b) {
+            var diff = getTimeValue(b.time) - getTimeValue(a.time);
+            return state.filters.sort === "date_desc" ? diff : -diff;
+          });
+      }
+
+      function ensureSelected(filtered) {
+        if (!filtered.length) {
+          state.ui.selectedId = "";
+          return;
+        }
+        var found = filtered.some(function (record) {
+          return record.id === state.ui.selectedId;
+        });
+        if (!found) {
+          state.ui.selectedId = filtered[0].id;
+        }
+      }
+
+      function getSelectedRecord(filtered) {
+        if (!filtered.length || !state.ui.selectedId) {
+          return null;
+        }
+        for (var i = 0; i < filtered.length; i += 1) {
+          if (filtered[i].id === state.ui.selectedId) {
+            return filtered[i];
+          }
+        }
+        return null;
+      }
+
+      function matchesSearch(record, keyword) {
+        if (!keyword) {
+          return true;
+        }
+        var lineText = record.contentLines ? record.contentLines.join(" ") : "";
+        return (record.title + " " + record.detail + " " + lineText).toLowerCase().indexOf(keyword) > -1;
+      }
+
+      function getTimeValue(timeText) {
+        var parts = String(timeText || "").split(":");
+        if (parts.length !== 3) {
+          return 0;
+        }
+        return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+      }
+
+      function typeLabel(type) {
+        if (type === "text") {
+          return "Text";
+        }
+        if (type === "image") {
+          return "Image";
+        }
+        if (type === "other") {
+          return "Other";
+        }
+        return "Record";
+      }
+
+      function escapeHtml(text) {
+        return String(text)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
       }
     })();
   </script>

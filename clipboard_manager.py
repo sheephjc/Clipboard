@@ -1,5 +1,5 @@
 # Author: HJC by codex
-# Version: 1.0.0
+# Version: 2.0.0
 from __future__ import annotations
 
 import ctypes
@@ -25,12 +25,13 @@ import time
 import tkinter as tk
 from html.parser import HTMLParser
 from tkinter import messagebox
-from typing import Callable
+from typing import Any, Callable
 
 from PIL import Image, ImageTk
 
 IS_WINDOWS = sys.platform.startswith("win")
 IS_MACOS = sys.platform == "darwin"
+OCR_SUPPORTED_PLATFORM = IS_WINDOWS or IS_MACOS
 
 if IS_WINDOWS:
     import winreg
@@ -48,7 +49,7 @@ else:
     win32gui = None
 
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 APP_NAME = "Clipboard"
 APP_ID = "Clipboard.Desktop"
 DISPLAY_NAME = "\u526a\u8d34\u677f"
@@ -68,6 +69,9 @@ WINDOW_MIN_HEIGHT = 900
 ICON_VARIANT_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 AUTO_DELETE_SETTING_KEY = "auto_delete_policy"
 AUTO_DELETE_CHECK_INTERVAL_SECONDS = 300
+OCR_BUTTON_TEXT = "识别文字"
+OCR_BUTTON_BUSY_TEXT = "识别中…"
+OCR_WORKING_STATUS_TEXT = "正在识别图片文字…"
 SINGLE_INSTANCE_MUTEX_NAME = f"Local\\{APP_ID}.Singleton"
 TRAY_WINDOW_CLASS_NAME = f"{APP_NAME}TrayWindow"
 TRAY_WINDOW_NAME = f"{APP_NAME}TrayHost"
@@ -939,6 +943,104 @@ def decode_clipboard_rtf(raw_data: bytes | str | None) -> str | None:
 
 def encode_clipboard_rtf(rtf_content: str) -> bytes:
     return rtf_content.encode("latin-1", errors="replace")
+
+
+class OcrDependencyError(RuntimeError):
+    pass
+
+
+_rapid_ocr_engine_lock = threading.Lock()
+_rapid_ocr_engine: Any | None = None
+_rapid_ocr_engine_init_error: Exception | None = None
+
+
+def _get_rapid_ocr_engine() -> Any:
+    global _rapid_ocr_engine, _rapid_ocr_engine_init_error
+    with _rapid_ocr_engine_lock:
+        if _rapid_ocr_engine is not None:
+            return _rapid_ocr_engine
+
+        if _rapid_ocr_engine_init_error is not None:
+            raise OcrDependencyError("OCR 依赖不可用，请先安装识别依赖。") from _rapid_ocr_engine_init_error
+
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+        except Exception as exc:
+            _rapid_ocr_engine_init_error = exc
+            raise OcrDependencyError("未检测到 rapidocr-onnxruntime / onnxruntime。") from exc
+
+        try:
+            _rapid_ocr_engine = RapidOCR()
+        except Exception as exc:
+            _rapid_ocr_engine_init_error = exc
+            raise RuntimeError("OCR 引擎初始化失败。") from exc
+
+        return _rapid_ocr_engine
+
+
+def _extract_ocr_line_text(item: Any) -> str:
+    if item is None:
+        return ""
+
+    if isinstance(item, str):
+        return item.strip()
+
+    if isinstance(item, dict):
+        for key in ("text", "txt", "rec_txt", "ocr_text", "label"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for value in item.values():
+            nested_text = _extract_ocr_line_text(value)
+            if nested_text:
+                return nested_text
+        return ""
+
+    if isinstance(item, (list, tuple, set)):
+        sequence = list(item)
+        if len(sequence) >= 2 and isinstance(sequence[1], str) and sequence[1].strip():
+            return sequence[1].strip()
+        if sequence and isinstance(sequence[0], str) and sequence[0].strip():
+            return sequence[0].strip()
+        for value in sequence:
+            nested_text = _extract_ocr_line_text(value)
+            if nested_text:
+                return nested_text
+        return ""
+
+    return ""
+
+
+def _normalize_ocr_output(result: Any) -> str:
+    payload = result[0] if isinstance(result, tuple) and result else result
+    if isinstance(payload, dict):
+        payload = payload.get("rec_res", payload.get("result", payload))
+
+    if isinstance(payload, str):
+        return payload.strip()
+
+    if isinstance(payload, (list, tuple, set)):
+        lines: list[str] = []
+        for item in payload:
+            line_text = _extract_ocr_line_text(item)
+            if line_text:
+                lines.append(line_text)
+        return "\n".join(lines).strip()
+
+    return _extract_ocr_line_text(payload)
+
+
+def recognize_image_text(image_path: Path) -> str:
+    if not image_path.exists():
+        raise FileNotFoundError("图片文件不存在。")
+
+    ocr_engine = _get_rapid_ocr_engine()
+    try:
+        result = ocr_engine(str(image_path))
+    except Exception as exc:
+        raise RuntimeError("图片文字识别失败。") from exc
+
+    return _normalize_ocr_output(result)
 
 
 def normalize_formula_source_text(text: str) -> str:
@@ -2279,8 +2381,11 @@ class ClipboardManagerApp(tk.Tk):
         self.list_scrollbar: AutoHideScrollbar | None = None
         self.preview_text_scroll: AutoHideScrollbar | None = None
         self.formula_button: tk.Button | None = None
+        self.ocr_button: tk.Button | None = None
         self.preview_header_row: tk.Frame | None = None
         self.preview_header_favorite_btn: tk.Label | None = None
+        self.ocr_result_popup: tk.Toplevel | None = None
+        self.ocr_running = False
         self.preview_text_is_programmatic_update = False
         self.draft_payload_by_entry_id: dict[int, RichTextPayload] = {}
         self.preview_history_by_entry_id: dict[int, list[RichTextPayload]] = {}
@@ -2782,6 +2887,7 @@ class ClipboardManagerApp(tk.Tk):
         actions.grid_columnconfigure(0, weight=1)
         actions.grid_columnconfigure(1, weight=0)
         actions.grid_columnconfigure(2, weight=0)
+        actions.grid_columnconfigure(3, weight=0)
 
         self.copy_button = tk.Button(
             actions,
@@ -2814,6 +2920,22 @@ class ClipboardManagerApp(tk.Tk):
         )
         self.formula_button.grid(row=0, column=1, sticky="ew", padx=(0, 8))
 
+        self.ocr_button = tk.Button(
+            actions,
+            text=OCR_BUTTON_TEXT,
+            bg=COLORS["card"],
+            fg=COLORS["accent_soft"],
+            relief="flat",
+            cursor="hand2",
+            font=FONT_BUTTON,
+            padx=16,
+            pady=11,
+            width=12,
+            command=self._recognize_selected_image_text,
+            state="disabled",
+        )
+        self.ocr_button.grid(row=0, column=2, sticky="ew", padx=(0, 8))
+
         self.delete_button = tk.Button(
             actions,
             text="\u5220\u9664\u8bb0\u5f55",
@@ -2828,7 +2950,7 @@ class ClipboardManagerApp(tk.Tk):
             command=self._delete_selected,
             state="disabled",
         )
-        self.delete_button.grid(row=0, column=2, sticky="ew", padx=(0, 8))
+        self.delete_button.grid(row=0, column=3, sticky="ew", padx=(0, 8))
 
         self.preview_header_row = tk.Frame(right, bg=COLORS["bg"])
         self.preview_header_row.pack(side="top", fill="x", padx=0, pady=(0, 10))
@@ -3019,6 +3141,7 @@ class ClipboardManagerApp(tk.Tk):
                 "\u652f\u6301\u65e5\u671f\u7b5b\u9009",
                 "\u652f\u6301\u5728\u5185\u5bb9\u533a\u7f16\u8f91\u6587\u672c",
                 "\u652f\u6301\u5bcc\u6587\u672c\u548c\u7eaf\u6587\u672c\u590d\u5236",
+                "\u652f\u6301\u56fe\u7247\u5185\u6587\u5b57\u8bc6\u522b",
                 "\u5173\u95ed\u9875\u9762\u6216\u5f00\u673a\u81ea\u542f\u9690\u85cf\u4e8e\u53f3\u4e0b\u89d2\u4efb\u52a1\u680f\u6258\u76d8\u5904",
             ]
         )
@@ -3564,6 +3687,207 @@ class ClipboardManagerApp(tk.Tk):
             return
         self.formula_button.config(state="normal", bg=COLORS["card"], fg=COLORS["accent"])
 
+    def _sync_ocr_button_for_entry(self, entry: ClipboardEntry | None) -> None:
+        if self.ocr_button is None:
+            return
+
+        if self.ocr_running:
+            self.ocr_button.config(
+                state="disabled",
+                text=OCR_BUTTON_BUSY_TEXT,
+                bg=COLORS["card"],
+                fg=COLORS["accent_soft"],
+            )
+            return
+
+        is_image_entry = (
+            entry is not None
+            and entry.type == "image"
+            and bool(entry.image_path)
+            and Path(entry.image_path).exists()
+        )
+        enabled = OCR_SUPPORTED_PLATFORM and is_image_entry
+        self.ocr_button.config(
+            state="normal" if enabled else "disabled",
+            text=OCR_BUTTON_TEXT,
+            bg=COLORS["card"],
+            fg=COLORS["accent"] if enabled else COLORS["accent_soft"],
+        )
+
+    def _recognize_selected_image_text(self) -> None:
+        if self.ocr_running:
+            return
+
+        entry = self._selected_entry()
+        if entry is None or entry.type != "image" or not entry.image_path:
+            self._sync_ocr_button_for_entry(entry)
+            return
+
+        if not OCR_SUPPORTED_PLATFORM:
+            messagebox.showinfo("识别文字", "当前系统暂不支持 OCR。")
+            return
+
+        image_path = Path(entry.image_path)
+        if not image_path.exists():
+            self._sync_ocr_button_for_entry(entry)
+            self._set_status("图片文件不存在，无法识别", healthy=False, temporary=True)
+            return
+
+        self.ocr_running = True
+        self._sync_ocr_button_for_entry(entry)
+        self._set_status(OCR_WORKING_STATUS_TEXT, healthy=True)
+        threading.Thread(
+            target=self._recognize_image_text_worker,
+            args=(image_path,),
+            name="OCRWorker",
+            daemon=True,
+        ).start()
+
+    def _recognize_image_text_worker(self, image_path: Path) -> None:
+        recognized_text = ""
+        error: Exception | None = None
+        try:
+            recognized_text = recognize_image_text(image_path)
+        except Exception as exc:
+            error = exc
+
+        def finish() -> None:
+            self.ocr_running = False
+            if self.is_shutting_down:
+                return
+
+            self._sync_ocr_button_for_entry(self._selected_entry())
+
+            if error is not None:
+                self._show_ocr_error(error)
+                return
+
+            text = recognized_text.strip()
+            if not text:
+                messagebox.showinfo("识别结果", "未识别到文字。")
+                self._set_status("未识别到文字", healthy=False, temporary=True)
+                return
+
+            self._show_ocr_result_popup(text)
+            self._set_status("识别完成", healthy=True, temporary=True)
+
+        self._queue_ui_action(finish)
+
+    def _show_ocr_error(self, error: Exception) -> None:
+        if isinstance(error, OcrDependencyError):
+            message = (
+                "OCR 依赖未就绪。\n\n"
+                "请先安装：\n"
+                "pip install rapidocr-onnxruntime onnxruntime\n\n"
+                f"详情：{error}"
+            )
+        else:
+            message = f"没有成功识别图片文字。\n\n{error}"
+
+        messagebox.showerror("识别失败", message)
+        self._set_status("识别失败", healthy=False, temporary=True)
+
+    def _show_ocr_result_popup(self, recognized_text: str) -> None:
+        self._close_ocr_result_popup()
+
+        popup_width = 760
+        popup_height = 520
+        popup = tk.Toplevel(self)
+        popup.title("识别结果")
+        popup.configure(bg=COLORS["panel"])
+        popup.geometry(f"{popup_width}x{popup_height}")
+        popup.minsize(520, 360)
+        with contextlib.suppress(Exception):
+            popup.transient(self)
+        popup.protocol("WM_DELETE_WINDOW", self._close_ocr_result_popup)
+
+        screen_width = popup.winfo_screenwidth()
+        screen_height = popup.winfo_screenheight()
+        x_pos = max(0, (screen_width - popup_width) // 2)
+        y_pos = max(0, (screen_height - popup_height) // 2)
+        popup.geometry(f"{popup_width}x{popup_height}+{x_pos}+{y_pos}")
+
+        container = tk.Frame(popup, bg=COLORS["panel"])
+        container.pack(fill="both", expand=True, padx=12, pady=12)
+
+        text_box = tk.Text(
+            container,
+            bg=COLORS["panel_alt"],
+            fg=COLORS["text"],
+            insertbackground=COLORS["text"],
+            relief="flat",
+            bd=0,
+            wrap="word",
+            font=FONT_TEXT,
+            padx=12,
+            pady=12,
+        )
+        text_box.pack(side="left", fill="both", expand=True)
+
+        scroll = tk.Scrollbar(container, command=text_box.yview)
+        scroll.pack(side="right", fill="y")
+        text_box.configure(yscrollcommand=scroll.set)
+
+        text_box.insert("1.0", recognized_text)
+        text_box.configure(state="disabled")
+
+        actions = tk.Frame(popup, bg=COLORS["panel"])
+        actions.pack(fill="x", padx=12, pady=(0, 12))
+
+        copy_btn = tk.Button(
+            actions,
+            text="复制识别文本",
+            bg=COLORS["accent"],
+            fg="#111111",
+            relief="flat",
+            cursor="hand2",
+            font=FONT_BUTTON,
+            padx=14,
+            pady=9,
+            command=lambda: self._copy_ocr_text(recognized_text),
+        )
+        copy_btn.pack(side="left")
+
+        close_btn = tk.Button(
+            actions,
+            text="关闭",
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            font=FONT_BUTTON,
+            padx=14,
+            pady=9,
+            command=self._close_ocr_result_popup,
+        )
+        close_btn.pack(side="right")
+
+        self.ocr_result_popup = popup
+        popup.lift()
+        popup.focus_force()
+
+    def _close_ocr_result_popup(self) -> None:
+        if self.ocr_result_popup is not None and self.ocr_result_popup.winfo_exists():
+            self.ocr_result_popup.destroy()
+        self.ocr_result_popup = None
+
+    def _copy_ocr_text(self, text: str) -> None:
+        content = text.strip()
+        if not content:
+            return
+
+        try:
+            self.platform_services.set_clipboard_text(content)
+        except Exception as exc:
+            messagebox.showerror("复制失败", f"没有成功复制识别文本。\n\n{exc}")
+            return
+
+        self.suppressed_snapshot_key = (
+            "text",
+            hash_rich_text(content),
+        )
+        self._set_status("已复制识别文本", healthy=True, temporary=True)
+
     def _set_preview_text_actions(self, *, show_reset: bool, show_save: bool) -> None:
         if show_reset:
             if not self.btn_reset_text.winfo_manager():
@@ -3940,6 +4264,7 @@ class ClipboardManagerApp(tk.Tk):
                 self.preview_header_favorite_btn.config(text="", fg=COLORS["text_dim"])
             self.copy_button.config(state="disabled", text="复制到剪贴板", bg=COLORS["accent"])
             self._sync_formula_button_for_entry(None)
+            self._sync_ocr_button_for_entry(None)
             self.delete_button.config(state="disabled")
             self.preview_photo = None
             self.preview_image_label.config(image="", text="", cursor="arrow")
@@ -3963,6 +4288,7 @@ class ClipboardManagerApp(tk.Tk):
         if entry.type == "text":
             self.copy_button.config(state="normal", text="复制到剪贴板", bg=COLORS["accent"])
             self._sync_formula_button_for_entry(entry)
+            self._sync_ocr_button_for_entry(None)
             self._set_preview_text_actions(show_reset=True, show_save=True)
             payload = self._effective_text_payload(entry)
             if payload is not None:
@@ -3974,12 +4300,14 @@ class ClipboardManagerApp(tk.Tk):
             can_copy = "normal" if entry.image_path and Path(entry.image_path).exists() else "disabled"
             self.copy_button.config(state=can_copy, text="复制到剪贴板", bg=COLORS["accent"])
             self._sync_formula_button_for_entry(None)
+            self._sync_ocr_button_for_entry(entry)
             self._set_preview_text_actions(show_reset=False, show_save=False)
             self._set_preview_image(entry.image_path)
             return
 
         self.copy_button.config(state="disabled", text="复制到剪贴板", bg=COLORS["accent"])
         self._sync_formula_button_for_entry(None)
+        self._sync_ocr_button_for_entry(None)
         self._set_preview_text_actions(show_reset=False, show_save=False)
         self._set_preview_text(self._other_preview_text(entry))
 
@@ -4258,6 +4586,7 @@ class ClipboardManagerApp(tk.Tk):
         self._close_auto_delete_popup()
         self._close_date_popup()
         self._close_zoomed_image()
+        self._close_ocr_result_popup()
         self.withdraw()
         self.is_window_visible = False
 
@@ -4326,6 +4655,7 @@ class ClipboardManagerApp(tk.Tk):
         self._close_auto_delete_popup()
         self._close_date_popup()
         self._close_zoomed_image()
+        self._close_ocr_result_popup()
 
         for after_id in (self.poll_after_id, self.queue_after_id, self.status_reset_after_id, self.preview_resize_after_id):
             if after_id is not None:
