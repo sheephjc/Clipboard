@@ -1048,7 +1048,7 @@
     <main id="top">
       <div class="hero">
         <div class="app-meta">
-          <div class="version">Version: 2.0.0</div>
+          <div class="version">Version: 2.0.1</div>
           <div class="author">Author: HJC by codex</div>
         </div>
         <div class="hero-copy">
@@ -1076,7 +1076,7 @@
                 <div class="demo-topbar" id="demo-topbar">
                   <button class="demo-chip" id="demo-toggle-clean" data-action="toggle-clean" type="button">自动删除：周</button>
                   <button class="demo-chip" id="demo-toggle-startup" data-action="toggle-startup" type="button">开机自启</button>
-                  <button class="demo-chip" id="demo-toggle-listening" data-action="toggle-listening" type="button">监听中</button>
+                  <button class="demo-chip" id="demo-open-images" data-action="open-images" type="button">打开图片存储位置</button>
                   <button class="demo-icon-btn" data-action="show-help" type="button" aria-label="查看版本和功能">?</button>
                   <button class="demo-icon-btn" id="demo-toggle-pin" data-action="toggle-pin" type="button" aria-label="置顶演示">☆</button>
                 </div>
@@ -1130,7 +1130,7 @@
 
             <div class="demo-modal" id="demo-help-modal" hidden>
               <h3>Clipboard 演示说明</h3>
-              <p>Version: 2.0.0</p>
+              <p>Version: 2.0.1</p>
               <p>支持文本、图片、文件历史记录、收藏筛选、图片 OCR、快速复制和删除操作。</p>
               <div class="demo-modal-actions">
                 <button class="demo-modal-btn primary" data-action="close-help" type="button">关闭</button>
@@ -1212,7 +1212,7 @@
     </main>
 
     <footer>
-      <span>Clipboard 1.0.0 · GitHub Pages + GitHub Releases</span>
+      <span>Clipboard 2.0.1 · GitHub Pages + GitHub Releases</span>
     </footer>
   </div>
 
@@ -1287,10 +1287,10 @@
             "Image record sample",
             "Size: 1437 x 998",
             "Actions: copy back and OCR text recognition.",
-            "OCR sample: Auto cleanup / Startup / Listening"
+            "OCR sample: Auto cleanup / Startup / Images"
           ],
           isFavorite: false,
-          ocrText: "Auto cleanup: week\nStartup enabled\nListening\nhello world!"
+          ocrText: "Auto cleanup: week\nStartup enabled\nImage storage\nhello world!"
         },
         {
           id: "other-1",
@@ -1323,7 +1323,6 @@
         toggles: {
           autoDelete: true,
           startup: true,
-          listening: true,
           pinned: false
         }
       };
@@ -1345,7 +1344,7 @@
         sort: document.getElementById("demo-sort"),
         toggleClean: document.getElementById("demo-toggle-clean"),
         toggleStartup: document.getElementById("demo-toggle-startup"),
-        toggleListening: document.getElementById("demo-toggle-listening"),
+        openImages: document.getElementById("demo-open-images"),
         togglePin: document.getElementById("demo-toggle-pin"),
         helpModal: document.getElementById("demo-help-modal"),
         ocrModal: document.getElementById("demo-ocr-modal"),
@@ -1481,11 +1480,9 @@
           return;
         }
 
-        if (action === "toggle-listening") {
-          state.toggles.listening = !state.toggles.listening;
-          setStatus(state.toggles.listening ? "Listening is active." : "Listening is paused.");
-          showToast(state.toggles.listening ? "Listening" : "Paused");
-          renderTopbar();
+        if (action === "open-images") {
+          setStatus("Image storage folder would open here.");
+          showToast("Image storage");
           return;
         }
 
@@ -1583,11 +1580,13 @@
       function renderTopbar() {
         elements.toggleClean.textContent = state.toggles.autoDelete ? "Auto Cleanup: Week" : "Auto Cleanup: Off";
         elements.toggleStartup.textContent = state.toggles.startup ? "Startup On" : "Startup Off";
-        elements.toggleListening.textContent = state.toggles.listening ? "Listening" : "Paused";
+        if (elements.openImages) {
+          elements.openImages.textContent = "打开图片存储位置";
+          elements.openImages.classList.remove("off");
+        }
 
         elements.toggleClean.classList.toggle("off", !state.toggles.autoDelete);
         elements.toggleStartup.classList.toggle("off", !state.toggles.startup);
-        elements.toggleListening.classList.toggle("off", !state.toggles.listening);
 
         elements.togglePin.classList.toggle("active", state.toggles.pinned);
         elements.togglePin.textContent = state.toggles.pinned ? "\u2605" : "\u2606";

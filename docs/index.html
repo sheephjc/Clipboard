@@ -1270,14 +1270,14 @@
     <main id="top">
       <div class="hero">
         <div class="app-meta">
-          <div class="version">Version: 2.0.0</div>
+          <div class="version">Version: 2.0.1</div>
           <div class="author">Author: HJC by codex</div>
         </div>
         <div class="hero-copy">
           <h1>查询剪贴板历史内容。</h1>
-          <p class="lead">Clipboard 会记录文本、富文本、图片和文件路径。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。</p>
+          <p class="lead">Clipboard 会记录一切复制的内容。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。</p>
           <p class="lead">图片支持文字识别功能。</p>
-          <p class="lead">左侧示例图可以展示 Clipboard 的功能，并支持部分交互。</p>
+          <p class="lead">左侧示例图展示 Clipboard 的部分功能，并支持交互。</p>
           <div class="actions" id="download-actions">
             <a class="button primary" id="windows-download" href="#">下载 Windows 版</a>
             <a class="button secondary disabled" id="mac-download" href="#" aria-disabled="true">macOS 版准备中</a>
@@ -1332,7 +1332,7 @@
                 <div class="demo-topbar" id="demo-topbar">
                   <button class="demo-chip" id="demo-toggle-clean" data-action="toggle-clean" type="button">自动删除：周</button>
                   <button class="demo-chip" id="demo-toggle-startup" data-action="toggle-startup" type="button">开机自启</button>
-                  <button class="demo-chip" id="demo-toggle-listening" data-action="toggle-listening" type="button">监听中</button>
+                  <button class="demo-chip" id="demo-open-images" data-action="open-images" type="button">打开图片存储位置</button>
                   <button class="demo-icon-btn" data-action="show-help" type="button" aria-label="查看版本和功能">?</button>
                   <button class="demo-icon-btn" id="demo-toggle-pin" data-action="toggle-pin" type="button" aria-label="置顶演示">☆</button>
                 </div>
@@ -1386,7 +1386,7 @@
 
             <div class="demo-modal" id="demo-help-modal" hidden>
               <h3>Clipboard 演示说明</h3>
-              <p>Version: 2.0.0</p>
+              <p>Version: 2.0.1</p>
               <p>支持文本、图片、文件历史记录、收藏筛选、图片 OCR、快速复制和删除操作。</p>
               <div class="demo-modal-actions">
                 <button class="demo-modal-btn primary" data-action="close-help" type="button">关闭</button>
@@ -1403,7 +1403,7 @@
             </div>
           </div>
           <p class="screenshot-note">适用于所有人，尤其是经常查询历史剪贴板内容的用户。</p>
-          <p class="screenshot-note">例如写论文需要经常调用各个图片，或是处理大量文档的用户。</p>
+          <p class="screenshot-note">例如写论文需要调用各个图片，或是需要来回处理部分文本。</p>
         </div>
       </div>
 
@@ -1416,19 +1416,19 @@
           <div class="features">
             <article class="feature">
               <strong>文本</strong>
-              <p>保留普通文本、HTML 和 RTF 内容，编辑后可以重新复制。编辑区支持上下标，支持快捷键。</p>
+              <p>记录普通文本、富文本内容，编辑后可以重新复制。编辑区支持上下标，支持快捷键。</p>
             </article>
             <article class="feature">
               <strong>图片</strong>
-              <p>截图和复制过的图片会保存到本地，之后可再次写回剪贴板。支持图片文字识别。</p>
+              <p>记录截图和复制的图片。支持图片文字识别。</p>
             </article>
             <article class="feature">
               <strong>文件</strong>
-              <p>文件和文件夹复制会进入“其他”分类，便于查找最近处理的路径。</p>
+              <p>文件和文件夹复制会进入“其他”分类，以路径的形式保存。</p>
             </article>
             <article class="feature">
               <strong>功能丰富</strong>
-              <p>支持开机自启，支持自动清理，支持收藏和日期筛选</p>
+              <p>支持开机自启，支持自动清理，支持收藏和日期筛选。</p>
             </article>
           </div>
         </div>
@@ -1450,7 +1450,7 @@
             </article>
             <article class="step">
               <span class="step-number">3</span>
-              <p>如果更新到新版本后也想要之前的记录，只需下载新的压缩包后将 data 文件夹移至同一目录下即可。</p>
+              <p>如果更新到新版本后想要保留之前的记录，只需下载新的压缩包后将 data 文件夹移至同一目录下即可。</p>
             </article>
           </div>
         </div>
@@ -1468,7 +1468,7 @@
     </main>
 
     <footer>
-      <span>Clipboard 1.0.0 · GitHub Pages + GitHub Releases</span>
+      <span>Clipboard 2.0.1 · GitHub Pages + GitHub Releases</span>
     </footer>
   </div>
 
@@ -1520,12 +1520,12 @@
       var DEMO_IMAGES = {
         text: "assets/clipboard_wenji.png",
         favorite: "assets/clipboard_wenji.png",
-        image: "assets/clipboard_tupian.png?v=2.0.2",
-        other: "assets/clipboard_wenjian.png?v=2.0.2"
+        image: "assets/clipboard_tupian.png?v=2.0.1",
+        other: "assets/clipboard_wenjian.png?v=2.0.1"
       };
 
       var ABOUT_LINES = [
-        "Version: 2.0.0",
+        "Version: 2.0.1",
         "Author\uff1aHJC by codex",
         "\u652f\u6301\u5f00\u673a\u81ea\u542f",
         "\u652f\u6301\u81ea\u52a8\u5220\u9664",

@@ -1,11 +1,12 @@
 # Author: HJC by codex
-# Version: 2.0.0
+# Version: 2.0.1
 from __future__ import annotations
 
 import ctypes
 import calendar
+import base64
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import datetime as dt
 import hashlib
 import html
@@ -23,9 +24,11 @@ import sys
 import threading
 import time
 import tkinter as tk
+import zipfile
 from html.parser import HTMLParser
 from tkinter import messagebox
 from typing import Any, Callable
+from urllib.parse import unquote, urlparse
 
 from PIL import Image, ImageTk
 
@@ -49,7 +52,7 @@ else:
     win32gui = None
 
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 APP_NAME = "Clipboard"
 APP_ID = "Clipboard.Desktop"
 DISPLAY_NAME = "\u526a\u8d34\u677f"
@@ -62,16 +65,34 @@ MAX_HISTORY = 200
 POLL_INTERVAL_MS = 800
 QUEUE_POLL_MS = 120
 LIST_SUMMARY_LIMIT = 72
-WINDOW_WIDTH = 1440
-WINDOW_HEIGHT = 1000
+WINDOW_WIDTH = 1700
+WINDOW_HEIGHT = 1200
 WINDOW_MIN_WIDTH = 1140
 WINDOW_MIN_HEIGHT = 900
+THUMBNAIL_MIN_SIZE = 180
+THUMBNAIL_MAX_SIZE = 300
+THUMBNAIL_PANEL_MIN_HEIGHT = 112
 ICON_VARIANT_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+IMAGE_FILE_EXTENSIONS = {
+    ".bmp",
+    ".dib",
+    ".gif",
+    ".jfif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
+GVML_CLIPBOARD_FORMAT_NAME = "Art::GVML ClipFormat"
+GVML_MEDIA_PREFIX = "clipboard/media/"
 AUTO_DELETE_SETTING_KEY = "auto_delete_policy"
 AUTO_DELETE_CHECK_INTERVAL_SECONDS = 300
 OCR_BUTTON_TEXT = "识别文字"
 OCR_BUTTON_BUSY_TEXT = "识别中…"
 OCR_WORKING_STATUS_TEXT = "正在识别图片文字…"
+IMAGE_FOLDER_BUTTON_TEXT = "打开图片存储位置"
 SINGLE_INSTANCE_MUTEX_NAME = f"Local\\{APP_ID}.Singleton"
 TRAY_WINDOW_CLASS_NAME = f"{APP_NAME}TrayWindow"
 TRAY_WINDOW_NAME = f"{APP_NAME}TrayHost"
@@ -112,12 +133,14 @@ FONT_BUTTON = ("Microsoft YaHei UI", 11, "bold")
 TYPE_LABELS = {
     "text": "文本",
     "image": "图片",
+    "mixed": "文本+图片",
     "other": "其他",
 }
 
 TYPE_COLORS = {
     "text": COLORS["text_text"],
     "image": COLORS["text_image"],
+    "mixed": COLORS["text_image"],
     "other": COLORS["text_other"],
 }
 
@@ -180,6 +203,7 @@ class ClipboardCapture:
     source_formats_json: str | None = None
     has_rich_text: bool = False
     image: Image.Image | None = None
+    images: list[Image.Image] = field(default_factory=list)
     other_kind: str | None = None
     other_payload_json: str | None = None
     is_favorite: bool = False
@@ -206,6 +230,7 @@ class ClipboardEntry:
     source_formats_json: str | None = None
     has_rich_text: bool = False
     image_path: str | None = None
+    image_paths_json: str | None = None
     other_kind: str | None = None
     other_payload_json: str | None = None
     is_favorite: bool = False
@@ -217,6 +242,34 @@ class ClipboardEntry:
     @property
     def text_content(self) -> str | None:
         return self.plain_text
+
+
+TEXT_ENTRY_TYPES = {"text", "mixed"}
+IMAGE_ENTRY_TYPES = {"image", "mixed"}
+
+
+def entry_has_text(entry: ClipboardEntry | None) -> bool:
+    return entry is not None and entry.type in TEXT_ENTRY_TYPES
+
+
+def entry_image_paths(entry: ClipboardEntry | None) -> list[str]:
+    if entry is None:
+        return []
+    paths: list[str] = []
+    if entry.image_paths_json:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            decoded = json.loads(entry.image_paths_json)
+            if isinstance(decoded, list):
+                paths.extend(str(path) for path in decoded if path)
+    if not paths and entry.image_path:
+        paths.append(entry.image_path)
+    elif entry.image_path and entry.image_path not in paths:
+        paths.insert(0, entry.image_path)
+    return paths
+
+
+def entry_has_image(entry: ClipboardEntry | None) -> bool:
+    return entry is not None and entry.type in IMAGE_ENTRY_TYPES and bool(entry_image_paths(entry))
 
 
 @dataclass
@@ -250,6 +303,10 @@ def text_source_formats_json(has_rich_text: bool) -> str:
 
 def rich_payload_has_formatting(payload: RichTextPayload) -> bool:
     return bool(payload.html_content or payload.rtf_content)
+
+
+def rich_payload_has_visible_text(payload: RichTextPayload | None) -> bool:
+    return bool(payload and payload.plain_text.strip())
 
 
 def build_rich_payload_from_segments(segments: list[tuple[frozenset[str], str]]) -> RichTextPayload:
@@ -358,10 +415,13 @@ class AutoHideScrollbar(tk.Canvas):
         command: Callable[..., object],
         thickness: int = 10,
         hide_delay_ms: int = 900,
+        orient: str = "vertical",
     ):
+        self.orient = orient
         super().__init__(
             master,
             width=0,
+            height=0,
             highlightthickness=0,
             bd=0,
             relief="flat",
@@ -397,6 +457,8 @@ class AutoHideScrollbar(tk.Canvas):
             "<B1-Motion>",
             "<Up>",
             "<Down>",
+            "<Left>",
+            "<Right>",
             "<Prior>",
             "<Next>",
             "<Home>",
@@ -426,7 +488,10 @@ class AutoHideScrollbar(tk.Canvas):
             self._redraw()
             return
         self.visible = True
-        self.configure(width=self.thickness + 6)
+        if self.orient == "horizontal":
+            self.configure(height=self.thickness + 6)
+        else:
+            self.configure(width=self.thickness + 6)
         self._redraw()
 
     def _hide(self, immediate: bool = False) -> None:
@@ -436,7 +501,10 @@ class AutoHideScrollbar(tk.Canvas):
         if not immediate and (self.hovered or self.dragging):
             return
         self.visible = False
-        self.configure(width=0)
+        if self.orient == "horizontal":
+            self.configure(height=0)
+        else:
+            self.configure(width=0)
         self.delete("all")
 
     def _schedule_hide(self) -> None:
@@ -445,18 +513,18 @@ class AutoHideScrollbar(tk.Canvas):
         self.hide_after_id = self.after(self.hide_delay_ms, self._hide)
 
     def _thumb_geometry(self) -> tuple[float, float]:
-        canvas_height = max(self.winfo_height(), 1)
-        raw_top = self.first * canvas_height
-        raw_bottom = self.last * canvas_height
+        axis_length = max(self.winfo_width() if self.orient == "horizontal" else self.winfo_height(), 1)
+        raw_top = self.first * axis_length
+        raw_bottom = self.last * axis_length
         raw_height = max(raw_bottom - raw_top, 1.0)
         thumb_height = max(raw_height, 42.0)
-        max_top = max(canvas_height - thumb_height, 0.0)
+        max_top = max(axis_length - thumb_height, 0.0)
         if raw_height >= thumb_height:
             top = min(raw_top, max_top)
         else:
             center = (raw_top + raw_bottom) / 2
             top = min(max(center - thumb_height / 2, 0.0), max_top)
-        bottom = min(canvas_height - 2, top + thumb_height)
+        bottom = min(axis_length - 2, top + thumb_height)
         return top, bottom
 
     def _redraw(self) -> None:
@@ -465,35 +533,40 @@ class AutoHideScrollbar(tk.Canvas):
             return
         top, bottom = self._thumb_geometry()
         color = self.thumb_active_color if (self.hovered or self.dragging) else self.thumb_color
-        x0 = 3
-        x1 = x0 + self.thickness
-        self.create_rectangle(x0, top + 2, x1, bottom - 2, fill=color, outline="")
+        if self.orient == "horizontal":
+            y0 = 3
+            y1 = y0 + self.thickness
+            self.create_rectangle(top + 2, y0, bottom - 2, y1, fill=color, outline="")
+        else:
+            x0 = 3
+            x1 = x0 + self.thickness
+            self.create_rectangle(x0, top + 2, x1, bottom - 2, fill=color, outline="")
 
-    def _fraction_from_y(self, y_pos: int) -> float:
-        canvas_height = max(self.winfo_height(), 1)
+    def _fraction_from_position(self, position: int) -> float:
+        axis_length = max(self.winfo_width() if self.orient == "horizontal" else self.winfo_height(), 1)
         span_fraction = max(self.last - self.first, 0.0)
-        raw_thumb_height = span_fraction * canvas_height
+        raw_thumb_height = span_fraction * axis_length
         thumb_height = max(raw_thumb_height, 42.0)
-        track_height = max(canvas_height - thumb_height, 1.0)
+        track_height = max(axis_length - thumb_height, 1.0)
         max_fraction = max(1.0 - span_fraction, 0.0)
         if max_fraction == 0.0:
             return 0.0
-        top = max(0.0, min(track_height, y_pos - thumb_height / 2))
+        top = max(0.0, min(track_height, position - thumb_height / 2))
         return max(0.0, min(max_fraction, (top / track_height) * max_fraction))
 
-    def _move_thumb(self, y_pos: int) -> None:
+    def _move_thumb(self, position: int) -> None:
         if not self.needed:
             return
-        self.command("moveto", self._fraction_from_y(y_pos))
+        self.command("moveto", self._fraction_from_position(position))
         self.pulse()
 
     def _on_press(self, event) -> str:
         self.dragging = True
-        self._move_thumb(event.y)
+        self._move_thumb(event.x if self.orient == "horizontal" else event.y)
         return "break"
 
     def _on_drag(self, event) -> str:
-        self._move_thumb(event.y)
+        self._move_thumb(event.x if self.orient == "horizontal" else event.y)
         return "break"
 
     def _on_release(self, _event) -> str:
@@ -784,6 +857,57 @@ def hash_image(image: Image.Image) -> str:
     return digest.hexdigest()
 
 
+def hash_images(images: list[Image.Image]) -> str:
+    image_list = unique_images(images)
+    if len(image_list) == 1:
+        return hash_image(image_list[0])
+    digest = hashlib.sha256()
+    digest.update(b"IMAGES\0")
+    for image in image_list:
+        digest.update(hash_image(image).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def unique_images(images: list[Image.Image]) -> list[Image.Image]:
+    unique: list[Image.Image] = []
+    seen_hashes: set[str] = set()
+    for image in images:
+        image_hash = hash_image(image)
+        if image_hash in seen_hashes:
+            continue
+        seen_hashes.add(image_hash)
+        unique.append(image)
+    return unique
+
+
+def capture_image_list(capture: ClipboardCapture) -> list[Image.Image]:
+    images = list(capture.images)
+    if not images and capture.image is not None:
+        images.append(capture.image)
+    return unique_images(images)
+
+
+def hash_mixed_content(
+    plain_text: str,
+    html_content: str | None,
+    rtf_content: str | None,
+    images: Image.Image | list[Image.Image],
+) -> str:
+    image_list = [images] if isinstance(images, Image.Image) else images
+    digest = hashlib.sha256()
+    digest.update(b"MIXED\0")
+    digest.update(plain_text.encode("utf-8"))
+    digest.update(b"\0HTML\0")
+    digest.update((html_content or "").encode("utf-8"))
+    digest.update(b"\0RTF\0")
+    digest.update((rtf_content or "").encode("latin-1", errors="replace"))
+    for image in unique_images(image_list):
+        digest.update(b"\0IMAGE\0")
+        digest.update(hash_image(image).encode("ascii"))
+    return digest.hexdigest()
+
+
 def hash_other(kind: str, payload: object) -> str:
     digest = hashlib.sha256()
     digest.update(kind.encode("utf-8"))
@@ -923,6 +1047,216 @@ def plain_text_from_rtf(raw_rtf: str | None) -> str:
     text = text.replace("{", "").replace("}", "")
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)[^\s<>'\"]+")
+URL_TRAILING_PUNCTUATION = ".,;:!?)]}，。；：！？）】》"
+
+
+def normalize_web_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    url = html.unescape(value).strip().strip("\"'")
+    url = url.rstrip(URL_TRAILING_PUNCTUATION)
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme.lower() in {"http", "https"} and parsed.netloc:
+        return url
+    if not parsed.scheme and url.lower().startswith("www."):
+        return f"https://{url}"
+    return None
+
+
+def unique_urls(urls: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        normalized = normalize_web_url(url)
+        if normalized is None:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(normalized)
+    return unique
+
+
+def web_urls_from_text(text: str | None) -> list[str]:
+    if not text:
+        return []
+    return unique_urls([match.group(0) for match in URL_PATTERN.finditer(text)])
+
+
+class HtmlLinkUrlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() != "a":
+            return
+        attr_map = {str(name).lower(): str(value) for name, value in attrs if value is not None}
+        href = attr_map.get("href")
+        if href:
+            self.urls.append(href)
+
+
+def html_link_urls(raw_html: str | None) -> list[str]:
+    fragment = extract_html_fragment(raw_html)
+    if not fragment:
+        return []
+    parser = HtmlLinkUrlParser()
+    with contextlib.suppress(Exception):
+        parser.feed(fragment)
+        parser.close()
+    return unique_urls(parser.urls)
+
+
+def rich_payload_link_hint_urls(payload: RichTextPayload | None) -> list[str]:
+    if payload is None:
+        return []
+    plain_text = payload.plain_text or ""
+    visible_text = plain_text_from_html(payload.html_content) if payload.html_content else plain_text
+    visible_urls = {url.lower() for url in web_urls_from_text(visible_text)}
+    urls = unique_urls(html_link_urls(payload.html_content) + web_urls_from_text(plain_text))
+    return [url for url in urls if url.lower() not in visible_urls]
+
+
+class HtmlImageSourceParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.sources: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() != "img":
+            return
+        attr_map = {str(name).lower(): str(value) for name, value in attrs if value is not None}
+        src = attr_map.get("src")
+        if src:
+            self.sources.append(html.unescape(src).strip())
+
+
+def html_image_sources(raw_html: str | None) -> list[str]:
+    fragment = extract_html_fragment(raw_html)
+    if not fragment:
+        return []
+    parser = HtmlImageSourceParser()
+    with contextlib.suppress(Exception):
+        parser.feed(fragment)
+        parser.close()
+    return parser.sources
+
+
+def image_from_html_source(src: str) -> Image.Image | None:
+    source = src.strip().strip("\"'")
+    if not source:
+        return None
+
+    if source.lower().startswith("data:image/"):
+        match = re.match(r"(?is)data:image/[^;,\s]+;base64,(.+)", source)
+        if not match:
+            return None
+        try:
+            image_bytes = base64.b64decode(match.group(1), validate=False)
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                return image.convert("RGBA")
+        except Exception:
+            return None
+
+    path_text = ""
+    parsed = urlparse(source)
+    if parsed.scheme.lower() == "file":
+        path_text = unquote(parsed.path or "")
+        if parsed.netloc and parsed.netloc.lower() != "localhost":
+            path_text = f"//{parsed.netloc}{path_text}"
+        if re.match(r"^/[A-Za-z]:[/\\]", path_text):
+            path_text = path_text[1:]
+    elif not parsed.scheme:
+        path_text = unquote(source)
+
+    if not path_text:
+        return None
+
+    path = Path(path_text)
+    if not path.exists() or not path.is_file():
+        return None
+
+    try:
+        with Image.open(path) as image:
+            return image.convert("RGBA")
+    except Exception:
+        return None
+
+
+def images_from_html(raw_html: str | None) -> list[Image.Image]:
+    images: list[Image.Image] = []
+    for src in html_image_sources(raw_html):
+        image = image_from_html_source(src)
+        if image is not None:
+            images.append(image)
+    return unique_images(images)
+
+
+def load_image_file_list(paths: list[str]) -> list[Image.Image] | None:
+    if len(paths) < 2:
+        return None
+
+    images: list[Image.Image] = []
+    for path_text in paths:
+        path = Path(path_text)
+        if not path.is_file() or path.suffix.lower() not in IMAGE_FILE_EXTENSIONS:
+            return None
+        try:
+            with Image.open(path) as image:
+                images.append(image.convert("RGBA"))
+        except Exception:
+            return None
+    return unique_images(images)
+
+
+def images_from_gvml_data(raw_data: bytes | bytearray | memoryview | None) -> list[Image.Image]:
+    if raw_data is None:
+        return []
+
+    data = bytes(raw_data)
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return []
+
+    images: list[Image.Image] = []
+    with archive:
+        for info in archive.infolist():
+            normalized_name = info.filename.replace("\\", "/")
+            lower_name = normalized_name.lower()
+            suffix = Path(lower_name).suffix
+            if info.is_dir() or not lower_name.startswith(GVML_MEDIA_PREFIX) or suffix not in IMAGE_FILE_EXTENSIONS:
+                continue
+            try:
+                with archive.open(info) as image_file:
+                    with Image.open(image_file) as image:
+                        images.append(image.convert("RGBA"))
+            except Exception:
+                continue
+    return unique_images(images)
+
+
+def images_from_gvml_clipboard(format_ids: list[int]) -> list[Image.Image]:
+    for format_id in format_ids:
+        if format_clipboard_name(format_id) != GVML_CLIPBOARD_FORMAT_NAME:
+            continue
+        with contextlib.suppress(Exception):
+            return images_from_gvml_data(win32clipboard.GetClipboardData(format_id))
+    return []
+
+
+def first_image_from_html(raw_html: str | None) -> Image.Image | None:
+    images = images_from_html(raw_html)
+    if images:
+        return images[0]
+    return None
 
 
 def decode_clipboard_html(raw_data: bytes | str | None) -> str | None:
@@ -1189,14 +1523,28 @@ class HtmlPreviewRenderer(HTMLParser):
     }
     BLOCK_TAGS = {"p", "div"}
 
-    def __init__(self, text_widget: tk.Text, insert_index: str = "end"):
+    def __init__(
+        self,
+        text_widget: tk.Text,
+        insert_index: str = "end",
+        image_entries: list[tuple[int, str]] | None = None,
+        image_loader: Callable[[str, int], ImageTk.PhotoImage | None] | None = None,
+        on_image_inserted: Callable[[int, str], None] | None = None,
+    ):
         super().__init__(convert_charrefs=True)
         self.text_widget = text_widget
         self.tag_stack: list[str] = []
         self.cursor_index = self.text_widget.index(insert_index)
+        self.image_entries = image_entries or []
+        self.image_entry_cursor = 0
+        self.image_loader = image_loader
+        self.on_image_inserted = on_image_inserted
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
+        if tag == "img":
+            self._insert_next_image()
+            return
         mapped_tag = self.STYLE_TAGS.get(tag)
         if mapped_tag:
             self.tag_stack.append(mapped_tag)
@@ -1204,6 +1552,11 @@ class HtmlPreviewRenderer(HTMLParser):
             self._insert("\n")
         elif tag in self.BLOCK_TAGS and self.cursor_index != "1.0":
             self._ensure_linebreak()
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        if tag in {"br", "img"}:
+            self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
@@ -1234,6 +1587,35 @@ class HtmlPreviewRenderer(HTMLParser):
         current = self.text_widget.get(f"{self.cursor_index}-1c", self.cursor_index)
         if current != "\n":
             self._insert("\n")
+
+    def _insert_next_image(self) -> None:
+        if self.image_entry_cursor >= len(self.image_entries):
+            return
+        image_entry = self.image_entries[self.image_entry_cursor]
+        self.image_entry_cursor += 1
+        self._insert_image_entry(image_entry)
+
+    def _insert_image_entry(self, image_entry: tuple[int, str]) -> None:
+        if self.image_loader is None:
+            return
+        image_index, image_path = image_entry
+        photo = self.image_loader(image_path, image_index)
+        if photo is None:
+            return
+        self._ensure_linebreak()
+        image_position = self.text_widget.index(self.cursor_index)
+        self.text_widget.image_create(self.cursor_index, image=photo, padx=0, pady=8)
+        self.cursor_index = self.text_widget.index(f"{image_position}+1c")
+        if self.on_image_inserted is not None:
+            self.on_image_inserted(image_index, image_position)
+        self._insert("\n")
+
+    def remaining_image_entries(self) -> list[tuple[int, str]]:
+        return self.image_entries[self.image_entry_cursor :]
+
+    def append_images(self, image_entries: list[tuple[int, str]]) -> None:
+        for image_entry in image_entries:
+            self._insert_image_entry(image_entry)
 
 
 class RtfPreviewRenderer:
@@ -1454,6 +1836,112 @@ def dib_to_image(dib_data: bytes) -> Image.Image:
         return image.convert("RGBA")
 
 
+def image_path_to_dib_bytes(image_path: str) -> bytes:
+    with Image.open(image_path) as image:
+        output = io.BytesIO()
+        image.convert("RGB").save(output, format="BMP")
+        return output.getvalue()[14:]
+
+
+def clipboard_file_uri(image_path: str) -> str:
+    return Path(image_path).resolve().as_uri()
+
+
+def html_image_tags_for_paths(image_paths: list[str]) -> str:
+    return "".join(
+        f'<br><img src="{html.escape(clipboard_file_uri(image_path), quote=True)}">'
+        for image_path in image_paths
+    )
+
+
+def replace_html_image_sources(raw_html: str, image_paths: list[str]) -> tuple[str, int]:
+    image_iter = iter(image_paths)
+    replaced_count = 0
+
+    def replace_match(match: re.Match[str]) -> str:
+        nonlocal replaced_count
+        try:
+            image_path = next(image_iter)
+        except StopIteration:
+            return match.group(0)
+        replaced_count += 1
+        return (
+            f"{match.group(1)}{match.group(2)}"
+            f"{html.escape(clipboard_file_uri(image_path), quote=True)}"
+            f"{match.group(4)}"
+        )
+
+    updated = re.sub(r"(?is)(<img\b[^>]*?\bsrc\s*=\s*)([\"'])(.*?)(\2)", replace_match, raw_html)
+    return updated, replaced_count
+
+
+def html_with_local_image_paths(
+    plain_text: str,
+    html_content: str | None,
+    image_paths: list[str],
+) -> str | None:
+    valid_paths = [path for path in image_paths if Path(path).exists()]
+    if not valid_paths:
+        return html_content
+
+    if html_content:
+        updated, replaced_count = replace_html_image_sources(html_content, valid_paths)
+        remaining_paths = valid_paths[replaced_count:]
+        if remaining_paths:
+            addition = html_image_tags_for_paths(remaining_paths)
+            if HTML_FRAGMENT_END in updated:
+                updated = updated.replace(HTML_FRAGMENT_END, addition + HTML_FRAGMENT_END, 1)
+            elif re.search(r"(?is)</body>", updated):
+                updated = re.sub(r"(?is)</body>", addition + "</body>", updated, count=1)
+            else:
+                updated += addition
+        return updated
+
+    fragment = html_escape_preserving_newlines(plain_text)
+    if fragment:
+        fragment += "<br>"
+    fragment += html_image_tags_for_paths(valid_paths).lstrip("<br>")
+    return build_clipboard_html(fragment)
+
+
+def build_hdrop_bytes(image_paths: list[str]) -> bytes:
+    existing_paths = [str(Path(path)) for path in image_paths if Path(path).exists()]
+    if not existing_paths:
+        return b""
+    # DROPFILES: pFiles, POINT(x,y), fNC, fWide, then double-null-terminated UTF-16 paths.
+    header = struct.pack("<IiiII", 20, 0, 0, 0, 1)
+    payload = ("\0".join(existing_paths) + "\0\0").encode("utf-16le")
+    return header + payload
+
+
+def set_clipboard_binary_data(format_id: int, payload: bytes) -> None:
+    if not payload:
+        return
+    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32
+    kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+    user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+    user32.SetClipboardData.restype = ctypes.c_void_p
+
+    hglobal = kernel32.GlobalAlloc(0x0042, len(payload))
+    if not hglobal:
+        raise ctypes.WinError()
+    locked = kernel32.GlobalLock(hglobal)
+    if not locked:
+        kernel32.GlobalFree(hglobal)
+        raise ctypes.WinError()
+    ctypes.memmove(locked, payload, len(payload))
+    kernel32.GlobalUnlock(hglobal)
+    if not user32.SetClipboardData(format_id, hglobal):
+        kernel32.GlobalFree(hglobal)
+        raise ctypes.WinError()
+
+
 def set_clipboard_rich_text(
     plain_text: str,
     html_content: str | None = None,
@@ -1473,14 +1961,85 @@ def set_clipboard_text(text: str) -> None:
 
 
 def set_clipboard_image(image_path: str) -> None:
-    with Image.open(image_path) as image:
-        output = io.BytesIO()
-        image.convert("RGB").save(output, format="BMP")
-        dib_bytes = output.getvalue()[14:]
+    dib_bytes = image_path_to_dib_bytes(image_path)
 
     with open_clipboard():
         win32clipboard.EmptyClipboard()
         win32clipboard.SetClipboardData(win32clipboard.CF_DIB, dib_bytes)
+
+
+def set_clipboard_rich_text_and_image(
+    plain_text: str,
+    html_content: str | None,
+    rtf_content: str | None,
+    image_path: str,
+) -> None:
+    dib_bytes = image_path_to_dib_bytes(image_path)
+    with open_clipboard():
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, plain_text)
+        if html_content:
+            win32clipboard.SetClipboardData(HTML_CLIPBOARD_FORMAT, html_content.encode("utf-8"))
+        if rtf_content:
+            win32clipboard.SetClipboardData(RTF_CLIPBOARD_FORMAT, encode_clipboard_rtf(rtf_content))
+        win32clipboard.SetClipboardData(win32clipboard.CF_DIB, dib_bytes)
+
+
+def set_clipboard_rich_text_and_images(
+    plain_text: str,
+    html_content: str | None,
+    rtf_content: str | None,
+    image_paths: list[str],
+) -> None:
+    local_html_content = html_with_local_image_paths(plain_text, html_content, image_paths)
+    hdrop_bytes = build_hdrop_bytes(image_paths)
+    with open_clipboard():
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, plain_text)
+        if local_html_content:
+            win32clipboard.SetClipboardData(HTML_CLIPBOARD_FORMAT, local_html_content.encode("utf-8"))
+        if rtf_content:
+            win32clipboard.SetClipboardData(RTF_CLIPBOARD_FORMAT, encode_clipboard_rtf(rtf_content))
+        if hdrop_bytes:
+            with contextlib.suppress(Exception):
+                set_clipboard_binary_data(win32con.CF_HDROP, hdrop_bytes)
+
+
+def _read_text_payload_from_open_clipboard(format_ids: list[int]) -> RichTextPayload | None:
+    if not any(
+        format_id in format_ids
+        for format_id in (win32con.CF_UNICODETEXT, HTML_CLIPBOARD_FORMAT, RTF_CLIPBOARD_FORMAT)
+    ):
+        return None
+
+    plain_text = ""
+    if win32con.CF_UNICODETEXT in format_ids:
+        text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+        plain_text = (text or "").rstrip("\0")
+
+    html_content = None
+    if HTML_CLIPBOARD_FORMAT in format_ids:
+        with contextlib.suppress(Exception):
+            html_content = decode_clipboard_html(win32clipboard.GetClipboardData(HTML_CLIPBOARD_FORMAT))
+
+    rtf_content = None
+    if RTF_CLIPBOARD_FORMAT in format_ids:
+        with contextlib.suppress(Exception):
+            rtf_content = decode_clipboard_rtf(win32clipboard.GetClipboardData(RTF_CLIPBOARD_FORMAT))
+
+    if not plain_text and html_content:
+        plain_text = plain_text_from_html(html_content)
+    if not plain_text and rtf_content:
+        plain_text = plain_text_from_rtf(rtf_content)
+
+    if plain_text == "" and not html_content and not rtf_content:
+        return None
+
+    return RichTextPayload(
+        plain_text=plain_text,
+        html_content=html_content,
+        rtf_content=rtf_content,
+    )
 
 
 def read_clipboard_text_payload() -> RichTextPayload | None:
@@ -1488,41 +2047,7 @@ def read_clipboard_text_payload() -> RichTextPayload | None:
         format_ids = enum_clipboard_formats()
         if not format_ids:
             return None
-
-        if not any(
-            format_id in format_ids
-            for format_id in (win32con.CF_UNICODETEXT, HTML_CLIPBOARD_FORMAT, RTF_CLIPBOARD_FORMAT)
-        ):
-            return None
-
-        plain_text = ""
-        if win32con.CF_UNICODETEXT in format_ids:
-            text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-            plain_text = (text or "").rstrip("\0")
-
-        html_content = None
-        if HTML_CLIPBOARD_FORMAT in format_ids:
-            with contextlib.suppress(Exception):
-                html_content = decode_clipboard_html(win32clipboard.GetClipboardData(HTML_CLIPBOARD_FORMAT))
-
-        rtf_content = None
-        if RTF_CLIPBOARD_FORMAT in format_ids:
-            with contextlib.suppress(Exception):
-                rtf_content = decode_clipboard_rtf(win32clipboard.GetClipboardData(RTF_CLIPBOARD_FORMAT))
-
-        if not plain_text and html_content:
-            plain_text = plain_text_from_html(html_content)
-        if not plain_text and rtf_content:
-            plain_text = plain_text_from_rtf(rtf_content)
-
-        if plain_text == "" and not html_content and not rtf_content:
-            return None
-
-        return RichTextPayload(
-            plain_text=plain_text,
-            html_content=html_content,
-            rtf_content=rtf_content,
-        )
+        return _read_text_payload_from_open_clipboard(format_ids)
 
 
 def read_clipboard_capture() -> ClipboardCapture | None:
@@ -1531,66 +2056,123 @@ def read_clipboard_capture() -> ClipboardCapture | None:
         if not format_ids:
             return None
 
-        if win32clipboard.CF_DIB in format_ids:
-            dib_data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
-            image = dib_to_image(dib_data)
-            return ClipboardCapture(
-                type="image",
-                content_hash=hash_image(image),
-                summary=f"图片 {image.width}x{image.height}",
-                image=image,
-            )
-
-        if win32clipboard.CF_HDROP in format_ids:
-            paths = [str(Path(path)) for path in win32clipboard.GetClipboardData(win32clipboard.CF_HDROP)]
-            if paths:
-                payload = {"paths": paths}
-                return ClipboardCapture(
-                    type="other",
-                    content_hash=hash_other("files", payload),
-                    summary=summarize_files(paths),
-                    other_kind="files",
-                    other_payload_json=json_dumps(payload),
-                )
-
+        text_payload = _read_text_payload_from_open_clipboard(format_ids)
         text_format_names = [
             format_clipboard_name(format_id)
             for format_id in format_ids
             if format_id in {win32con.CF_UNICODETEXT, HTML_CLIPBOARD_FORMAT, RTF_CLIPBOARD_FORMAT}
         ]
-        if text_format_names:
-            plain_text = ""
-            if win32clipboard.CF_UNICODETEXT in format_ids:
-                text = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
-                plain_text = (text or "").rstrip("\0")
 
-            html_content = None
-            if HTML_CLIPBOARD_FORMAT in format_ids:
-                with contextlib.suppress(Exception):
-                    html_content = decode_clipboard_html(win32clipboard.GetClipboardData(HTML_CLIPBOARD_FORMAT))
+        dib_image: Image.Image | None = None
+        dib_format_name: str | None = None
+        if win32clipboard.CF_DIB in format_ids:
+            with contextlib.suppress(Exception):
+                dib_data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
+                dib_image = dib_to_image(dib_data)
+                dib_format_name = format_clipboard_name(win32clipboard.CF_DIB)
 
-            rtf_content = None
-            if RTF_CLIPBOARD_FORMAT in format_ids:
-                with contextlib.suppress(Exception):
-                    rtf_content = decode_clipboard_rtf(win32clipboard.GetClipboardData(RTF_CLIPBOARD_FORMAT))
+        preferred_images: list[Image.Image] = []
+        preferred_format_names: list[str] = []
+        gvml_images = images_from_gvml_clipboard(format_ids)
+        if gvml_images:
+            preferred_images.extend(gvml_images)
+            preferred_format_names.append(GVML_CLIPBOARD_FORMAT_NAME)
 
-            if not plain_text and html_content:
-                plain_text = plain_text_from_html(html_content)
-            if not plain_text and rtf_content:
-                plain_text = plain_text_from_rtf(rtf_content)
+        hdrop_paths: list[str] = []
+        if win32clipboard.CF_HDROP in format_ids:
+            hdrop_paths = [str(Path(path)) for path in win32clipboard.GetClipboardData(win32clipboard.CF_HDROP)]
+            hdrop_images = load_image_file_list(hdrop_paths)
+            if hdrop_images:
+                preferred_images.extend(hdrop_images)
+                preferred_format_names.append(format_clipboard_name(win32con.CF_HDROP))
 
-            if plain_text != "" or html_content or rtf_content:
-                has_rich_text = bool(html_content or rtf_content)
-                return ClipboardCapture(
-                    type="text",
-                    content_hash=hash_rich_text(plain_text, html_content, rtf_content),
-                    summary=summarize_text(plain_text or plain_text_from_html(html_content)),
-                    plain_text=plain_text,
-                    html_content=html_content,
-                    rtf_content=rtf_content,
-                    source_formats_json=json_dumps(text_format_names),
-                    has_rich_text=has_rich_text,
-                )
+        if text_payload is not None and text_payload.html_content:
+            html_images = images_from_html(text_payload.html_content)
+            if html_images:
+                preferred_images.extend(html_images)
+                preferred_format_names.append("HTML image")
+
+        preferred_images = unique_images(preferred_images)
+        if len(preferred_images) >= 2:
+            images = preferred_images
+            image_format_names = preferred_format_names
+        else:
+            images = unique_images(([dib_image] if dib_image is not None else []) + preferred_images)
+            image_format_names = ([dib_format_name] if dib_format_name else []) + preferred_format_names
+
+        if rich_payload_has_visible_text(text_payload) and images:
+            has_rich_text = bool(text_payload.html_content or text_payload.rtf_content)
+            text_summary = summarize_text(
+                text_payload.plain_text or plain_text_from_html(text_payload.html_content)
+            )
+            image_summary = (
+                f"图片 {len(images)} 张"
+                if len(images) > 1
+                else f"图片 {images[0].width}x{images[0].height}"
+            )
+            summary = f"{text_summary} + {image_summary}" if text_summary else image_summary
+            return ClipboardCapture(
+                type="mixed",
+                content_hash=hash_mixed_content(
+                    text_payload.plain_text,
+                    text_payload.html_content,
+                    text_payload.rtf_content,
+                    images,
+                ),
+                summary=summary,
+                plain_text=text_payload.plain_text,
+                html_content=text_payload.html_content,
+                rtf_content=text_payload.rtf_content,
+                source_formats_json=json_dumps(text_format_names + image_format_names),
+                has_rich_text=has_rich_text,
+                image=images[0],
+                images=images,
+            )
+
+        if images:
+            image = images[0]
+            image_summary = (
+                f"图片 {len(images)} 张"
+                if len(images) > 1
+                else f"图片 {image.width}x{image.height}"
+            )
+            return ClipboardCapture(
+                type="image",
+                content_hash=hash_images(images),
+                summary=image_summary,
+                source_formats_json=json_dumps(image_format_names) if image_format_names else None,
+                image=image,
+                images=images,
+            )
+
+        if hdrop_paths:
+            payload = {"paths": hdrop_paths}
+            return ClipboardCapture(
+                type="other",
+                content_hash=hash_other("files", payload),
+                summary=summarize_files(hdrop_paths),
+                other_kind="files",
+                other_payload_json=json_dumps(payload),
+            )
+
+        if text_payload is not None:
+            has_rich_text = bool(text_payload.html_content or text_payload.rtf_content)
+            return ClipboardCapture(
+                type="text",
+                content_hash=hash_rich_text(
+                    text_payload.plain_text,
+                    text_payload.html_content,
+                    text_payload.rtf_content,
+                ),
+                summary=summarize_text(
+                    text_payload.plain_text or plain_text_from_html(text_payload.html_content)
+                ),
+                plain_text=text_payload.plain_text,
+                html_content=text_payload.html_content,
+                rtf_content=text_payload.rtf_content,
+                source_formats_json=json_dumps(text_format_names),
+                has_rich_text=has_rich_text,
+            )
 
         format_names = [format_clipboard_name(format_id) for format_id in format_ids]
         payload = {"formats": format_names}
@@ -1635,6 +2217,7 @@ class ClipboardStore:
                 source_formats_json TEXT,
                 has_rich_text INTEGER DEFAULT 0,
                 image_path TEXT,
+                image_paths_json TEXT,
                 other_kind TEXT,
                 other_payload_json TEXT
             );
@@ -1660,6 +2243,7 @@ class ClipboardStore:
             "source_formats_json": "TEXT",
             "has_rich_text": "INTEGER DEFAULT 0",
             "is_favorite": "INTEGER DEFAULT 0",
+            "image_paths_json": "TEXT",
         }
         for column_name, column_type in column_specs.items():
             if column_name not in columns:
@@ -1682,6 +2266,19 @@ class ClipboardStore:
             WHERE has_rich_text IS NULL OR has_rich_text = 0
             """
         )
+        rows = self.conn.execute(
+            """
+            SELECT id, image_path
+            FROM entries
+            WHERE image_path IS NOT NULL
+              AND COALESCE(image_paths_json, '') = ''
+            """
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                "UPDATE entries SET image_paths_json = ? WHERE id = ?",
+                (json_dumps([row["image_path"]]), row["id"]),
+            )
 
     def _row_to_entry(self, row: sqlite3.Row) -> ClipboardEntry:
         return ClipboardEntry(
@@ -1696,6 +2293,7 @@ class ClipboardStore:
             source_formats_json=row["source_formats_json"],
             has_rich_text=bool(row["has_rich_text"]),
             image_path=row["image_path"],
+            image_paths_json=row["image_paths_json"],
             other_kind=row["other_kind"],
             other_payload_json=row["other_payload_json"],
             is_favorite=bool(row["is_favorite"]) if "is_favorite" in row.keys() else False,
@@ -1707,7 +2305,7 @@ class ClipboardStore:
             SELECT id, type, summary, created_at, content_hash,
                    COALESCE(plain_text, text_content) AS plain_text,
                    html_content, rtf_content, source_formats_json, COALESCE(has_rich_text, 0) AS has_rich_text,
-                   image_path, other_kind, other_payload_json, COALESCE(is_favorite, 0) AS is_favorite
+                   image_path, image_paths_json, other_kind, other_payload_json, COALESCE(is_favorite, 0) AS is_favorite
             FROM entries
             ORDER BY id DESC
             LIMIT ?
@@ -1727,17 +2325,22 @@ class ClipboardStore:
     def add_capture(self, capture: ClipboardCapture) -> ClipboardEntry:
         created_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         image_path = None
-        if capture.type == "image" and capture.image is not None:
-            image_path = self._save_image(capture.image, capture.content_hash)
+        image_paths: list[str] = []
+        if capture.type in IMAGE_ENTRY_TYPES and (capture.image is not None or capture.images):
+            for image in capture_image_list(capture):
+                image_paths.append(self._save_image(image, hash_image(image)))
+            if image_paths:
+                image_path = image_paths[0]
+        image_paths_json = json_dumps(image_paths) if image_paths else None
 
         cursor = self.conn.execute(
             """
             INSERT INTO entries (
                 type, summary, created_at, content_hash,
                 plain_text, text_content, html_content, rtf_content, source_formats_json, has_rich_text,
-                image_path, other_kind, other_payload_json, is_favorite
+                image_path, image_paths_json, other_kind, other_payload_json, is_favorite
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 capture.type,
@@ -1751,6 +2354,7 @@ class ClipboardStore:
                 capture.source_formats_json,
                 1 if capture.has_rich_text else 0,
                 image_path,
+                image_paths_json,
                 capture.other_kind,
                 capture.other_payload_json,
                 1 if capture.is_favorite else 0,
@@ -1770,6 +2374,7 @@ class ClipboardStore:
             source_formats_json=capture.source_formats_json,
             has_rich_text=capture.has_rich_text,
             image_path=image_path,
+            image_paths_json=image_paths_json,
             other_kind=capture.other_kind,
             other_payload_json=capture.other_payload_json,
             is_favorite=capture.is_favorite,
@@ -1859,12 +2464,17 @@ class ClipboardStore:
         self.cleanup_unused_images()
 
     def cleanup_unused_images(self) -> None:
-        used_paths = {
-            Path(row["image_path"])
-            for row in self.conn.execute(
-                "SELECT image_path FROM entries WHERE image_path IS NOT NULL"
-            ).fetchall()
-        }
+        used_paths: set[Path] = set()
+        for row in self.conn.execute(
+            "SELECT image_path, image_paths_json FROM entries WHERE image_path IS NOT NULL OR image_paths_json IS NOT NULL"
+        ).fetchall():
+            if row["image_path"]:
+                used_paths.add(Path(row["image_path"]))
+            if row["image_paths_json"]:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
+                    decoded = json.loads(row["image_paths_json"])
+                    if isinstance(decoded, list):
+                        used_paths.update(Path(path) for path in decoded if path)
         for path in self.image_dir.glob("*.png"):
             if path not in used_paths:
                 with contextlib.suppress(OSError):
@@ -1953,6 +2563,19 @@ class StartupManager:
                 return True
         except FileNotFoundError:
             return False
+
+    def get_command(self) -> str | None:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY, 0, winreg.KEY_READ) as key:
+                value, _value_type = winreg.QueryValueEx(key, self.value_name)
+                return str(value)
+        except FileNotFoundError:
+            return None
+
+    def ensure_current_command(self) -> None:
+        if self.get_command() == self.build_command():
+            return
+        self.set_enabled(True)
 
     def set_enabled(self, enabled: bool) -> None:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY) as key:
@@ -2165,6 +2788,9 @@ class NullStartupManager:
     def is_enabled(self) -> bool:
         return False
 
+    def ensure_current_command(self) -> None:
+        return
+
     def set_enabled(self, enabled: bool) -> None:
         if enabled:
             raise RuntimeError("This platform does not support startup registration yet.")
@@ -2237,6 +2863,24 @@ class PlatformServices:
     def set_clipboard_image(self, image_path: str) -> None:
         raise NotImplementedError
 
+    def set_clipboard_rich_text_and_image(
+        self,
+        plain_text: str,
+        html_content: str | None,
+        rtf_content: str | None,
+        image_path: str,
+    ) -> None:
+        raise NotImplementedError
+
+    def set_clipboard_rich_text_and_images(
+        self,
+        plain_text: str,
+        html_content: str | None,
+        rtf_content: str | None,
+        image_paths: list[str],
+    ) -> None:
+        raise NotImplementedError
+
 
 class WindowsPlatformServices(PlatformServices):
     platform_name = "windows"
@@ -2291,6 +2935,24 @@ class WindowsPlatformServices(PlatformServices):
 
     def set_clipboard_image(self, image_path: str) -> None:
         set_clipboard_image(image_path)
+
+    def set_clipboard_rich_text_and_image(
+        self,
+        plain_text: str,
+        html_content: str | None,
+        rtf_content: str | None,
+        image_path: str,
+    ) -> None:
+        set_clipboard_rich_text_and_image(plain_text, html_content, rtf_content, image_path)
+
+    def set_clipboard_rich_text_and_images(
+        self,
+        plain_text: str,
+        html_content: str | None,
+        rtf_content: str | None,
+        image_paths: list[str],
+    ) -> None:
+        set_clipboard_rich_text_and_images(plain_text, html_content, rtf_content, image_paths)
 
 
 def create_platform_services() -> PlatformServices:
@@ -2362,10 +3024,14 @@ class ClipboardManagerApp(tk.Tk):
         self.zoom_source_image: Image.Image | None = None
         self.zoom_base_size: tuple[int, int] | None = None
         self.zoom_scale = 1.0
+        self.mixed_preview_photo: ImageTk.PhotoImage | None = None
+        self.mixed_thumbnail_photos: list[ImageTk.PhotoImage] = []
+        self.inline_preview_photos: list[ImageTk.PhotoImage] = []
+        self.inline_preview_image_marks: dict[int, str] = {}
+        self.selected_image_index_by_entry_id: dict[int, int] = {}
         self.preview_resize_after_id: str | None = None
         self.poll_after_id: str | None = None
         self.queue_after_id: str | None = None
-        self.status_reset_after_id: str | None = None
         self.last_snapshot_key = self.store.get_latest_snapshot_key()
         self.suppressed_snapshot_key: tuple[str, str] | None = None
         self.last_auto_delete_check_monotonic = 0.0
@@ -2373,15 +3039,25 @@ class ClipboardManagerApp(tk.Tk):
         self.is_shutting_down = False
         self.ui_queue: queue.Queue[Callable[[], None]] = queue.Queue()
 
+        self.search_clear_button: tk.Label | None = None
         self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", lambda *_: self._refresh_list())
-
+        self.search_var.trace_add("write", lambda *_: self._on_search_changed())
         self.search_entry: tk.Entry | None = None
         self.filter_buttons: dict[str, tk.Label] = {}
         self.list_scrollbar: AutoHideScrollbar | None = None
+        self.preview_text_body: tk.Frame | None = None
         self.preview_text_scroll: AutoHideScrollbar | None = None
+        self.preview_link_bar: tk.Frame | None = None
+        self.preview_link_label: tk.Text | None = None
         self.formula_button: tk.Button | None = None
         self.ocr_button: tk.Button | None = None
+        self.mixed_image_view: tk.Frame | None = None
+        self.mixed_preview_label: tk.Label | None = None
+        self.mixed_thumbnail_shell: tk.Frame | None = None
+        self.mixed_thumbnail_canvas: tk.Canvas | None = None
+        self.mixed_thumbnail_frame: tk.Frame | None = None
+        self.mixed_thumbnail_window: int | None = None
+        self.mixed_thumbnail_scroll: AutoHideScrollbar | None = None
         self.preview_header_row: tk.Frame | None = None
         self.preview_header_favorite_btn: tk.Label | None = None
         self.ocr_result_popup: tk.Toplevel | None = None
@@ -2679,31 +3355,37 @@ class ClipboardManagerApp(tk.Tk):
         ):
             widget.bind("<Button-1>", lambda _event: self._toggle_startup())
 
-        status_chip = tk.Frame(
+        image_folder_chip = tk.Frame(
             header_controls,
             bg=COLORS["card"],
             highlightthickness=1,
             highlightbackground=COLORS["border"],
             padx=14,
             pady=9,
+            cursor="hand2",
         )
-        status_chip.pack(side="left", anchor="n")
-        self.status_dot = tk.Label(
-            status_chip,
-            text="\u25cf",
+        image_folder_chip.pack(side="left", anchor="n")
+        image_folder_icon = tk.Label(
+            image_folder_chip,
+            text="\U0001f4c1",
             bg=COLORS["card"],
-            fg=COLORS["success"],
+            fg=COLORS["accent_soft"],
             font=("Segoe UI Symbol", 12),
+            cursor="hand2",
         )
-        self.status_dot.pack(side="left", padx=(0, 6))
-        self.status_label = tk.Label(
-            status_chip,
-            text="\u76d1\u542c\u4e2d",
+        image_folder_icon.pack(side="left", padx=(0, 6))
+        image_folder_label = tk.Label(
+            image_folder_chip,
+            text=IMAGE_FOLDER_BUTTON_TEXT,
             bg=COLORS["card"],
-            fg=COLORS["text_dim"],
+            fg=COLORS["text"],
             font=FONT_SMALL,
+            cursor="hand2",
         )
-        self.status_label.pack(side="left")
+        image_folder_label.pack(side="left")
+
+        for widget in (image_folder_chip, image_folder_icon, image_folder_label):
+            widget.bind("<Button-1>", lambda _event: self._open_image_storage_location())
 
         self.help_button = tk.Label(
             header_controls,
@@ -2774,7 +3456,19 @@ class ClipboardManagerApp(tk.Tk):
             highlightthickness=0,
             font=FONT_UI,
         )
-        self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 14), pady=12)
+        self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 4), pady=12)
+        self.search_clear_button = tk.Label(
+            search_shell,
+            text="\u00d7",
+            width=2,
+            anchor="center",
+            bg=COLORS["card"],
+            fg=COLORS["border"],
+            font=("Microsoft YaHei UI", 15, "bold"),
+            cursor="arrow",
+        )
+        self.search_clear_button.pack(side="right", padx=(0, 10), pady=7)
+        self.search_clear_button.bind("<Button-1>", self._clear_search)
 
         filterbar = tk.Frame(self, bg=COLORS["bg"])
         filterbar.pack(fill="x", padx=18, pady=(14, 0))
@@ -2996,8 +3690,43 @@ class ClipboardManagerApp(tk.Tk):
         )
 
         self.preview_text_frame = tk.Frame(self.preview_frame, bg=COLORS["panel"])
-        self.preview_text = tk.Text(
+        self.preview_link_bar = tk.Frame(
             self.preview_text_frame,
+            bg=COLORS["panel_alt"],
+            highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
+        self.preview_link_label = tk.Text(
+            self.preview_link_bar,
+            wrap="word",
+            height=2,
+            bg=COLORS["panel_alt"],
+            fg=COLORS["accent_soft"],
+            insertbackground=COLORS["accent_soft"],
+            selectbackground=COLORS["accent"],
+            selectforeground=COLORS["bg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            font=FONT_SMALL,
+            padx=14,
+            pady=7,
+            cursor="xterm",
+            undo=False,
+        )
+        self.preview_link_label.pack(side="left", fill="x", expand=True)
+        self.preview_link_label.bind("<Control-a>", self._select_all_link_hint)
+        self.preview_link_label.bind("<Control-A>", self._select_all_link_hint)
+        self.preview_link_label.bind("<Control-c>", self._copy_from_link_hint_selection)
+        self.preview_link_label.bind("<Control-C>", self._copy_from_link_hint_selection)
+        self.preview_link_label.bind("<<Copy>>", self._copy_from_link_hint_selection)
+        self.preview_link_label.bind("<<Paste>>", lambda _event: "break")
+        self.preview_link_label.bind("<<Cut>>", lambda _event: "break")
+        self.preview_link_label.bind("<<Clear>>", lambda _event: "break")
+        self.preview_link_label.bind("<KeyPress>", self._block_link_hint_edit)
+        self.preview_text_body = tk.Frame(self.preview_text_frame, bg=COLORS["panel"])
+        self.preview_text = tk.Text(
+            self.preview_text_body,
             wrap="word",
             bg=COLORS["panel"],
             fg=COLORS["text"],
@@ -3018,10 +3747,11 @@ class ClipboardManagerApp(tk.Tk):
         self.preview_text_actions = tk.Frame(self.preview_text_frame, bg=COLORS["panel"])
         self.preview_text_actions.pack(side="bottom", fill="x")
 
+        self.preview_text_body.pack(side="top", fill="both", expand=True)
         self.preview_text.pack(side="left", fill="both", expand=True)
 
         self.preview_text_scroll = AutoHideScrollbar(
-            self.preview_text_frame,
+            self.preview_text_body,
             bg=COLORS["panel"],
             thumb_color="#536b8a",
             thumb_active_color=COLORS["accent_soft"],
@@ -3096,11 +3826,82 @@ class ClipboardManagerApp(tk.Tk):
         self.preview_image_label.pack(fill="both", expand=True)
         self.preview_image_label.bind("<Button-1>", self._open_zoomed_image)
 
+        self.mixed_image_view = tk.Frame(self.preview_image_frame, bg=COLORS["panel"])
+        self.mixed_preview_label = tk.Label(
+            self.mixed_image_view,
+            bg=COLORS["panel"],
+            fg=COLORS["text_dim"],
+            cursor="arrow",
+        )
+        self.mixed_preview_label.bind("<Button-1>", self._open_zoomed_image)
+        self.mixed_thumbnail_shell = tk.Frame(
+            self.mixed_image_view,
+            bg=COLORS["panel"],
+            height=THUMBNAIL_PANEL_MIN_HEIGHT,
+        )
+        self.mixed_thumbnail_shell.pack(side="top", fill="x", expand=True, padx=10, pady=(8, 2))
+        self.mixed_thumbnail_shell.pack_propagate(False)
+        self.mixed_thumbnail_canvas = tk.Canvas(
+            self.mixed_thumbnail_shell,
+            bg=COLORS["panel"],
+            bd=0,
+            highlightthickness=0,
+            height=THUMBNAIL_PANEL_MIN_HEIGHT,
+        )
+        self.mixed_thumbnail_scroll = AutoHideScrollbar(
+            self.mixed_thumbnail_shell,
+            bg=COLORS["panel"],
+            thumb_color="#4a6281",
+            thumb_active_color=COLORS["accent_soft"],
+            command=self.mixed_thumbnail_canvas.xview,
+            thickness=6,
+            orient="horizontal",
+            hide_delay_ms=650,
+        )
+        self.mixed_thumbnail_canvas.configure(xscrollcommand=self.mixed_thumbnail_scroll.set)
+        self.mixed_thumbnail_scroll.attach(self.mixed_thumbnail_canvas)
+        self.mixed_thumbnail_frame = tk.Frame(self.mixed_thumbnail_canvas, bg=COLORS["panel"])
+        self.mixed_thumbnail_scroll.attach(self.mixed_thumbnail_frame)
+        self.mixed_thumbnail_window = self.mixed_thumbnail_canvas.create_window(
+            (0, 0),
+            window=self.mixed_thumbnail_frame,
+            anchor="nw",
+        )
+        self.mixed_thumbnail_frame.bind(
+            "<Configure>",
+            lambda _event: self._sync_mixed_thumbnail_canvas(),
+        )
+        self.mixed_thumbnail_canvas.bind("<Configure>", lambda _event: self._sync_mixed_thumbnail_canvas())
+        self.mixed_thumbnail_canvas.bind("<Button-1>", self._clear_mixed_image_selection)
+        self.mixed_thumbnail_canvas.bind("<MouseWheel>", self._on_mixed_thumbnail_mousewheel)
+        self.mixed_thumbnail_canvas.pack(side="top", fill="x", expand=True)
+        self.mixed_thumbnail_scroll.pack(side="bottom", fill="x")
+
         self._set_preview_mode("empty")
 
     def _set_filter(self, filter_key: str) -> None:
         self.current_filter = filter_key
         self._refresh_list()
+
+    def _on_search_changed(self) -> None:
+        self._sync_search_clear_button()
+        self._refresh_list()
+
+    def _sync_search_clear_button(self) -> None:
+        if self.search_clear_button is None:
+            return
+        has_query = bool(self.search_var.get())
+        self.search_clear_button.config(
+            fg=COLORS["accent_soft"] if has_query else COLORS["border"],
+            cursor="hand2" if has_query else "arrow",
+        )
+
+    def _clear_search(self, _event=None) -> str:
+        if self.search_var.get():
+            self.search_var.set("")
+        if self.search_entry is not None and self.search_entry.winfo_exists():
+            self.search_entry.focus_set()
+        return "break"
 
     def _queue_ui_action(self, callback: Callable[[], None]) -> None:
         self.ui_queue.put(callback)
@@ -3120,15 +3921,20 @@ class ClipboardManagerApp(tk.Tk):
         self.queue_after_id = self.after(QUEUE_POLL_MS, self._process_ui_queue)
 
     def _set_status(self, text: str, healthy: bool = True, temporary: bool = False) -> None:
-        self.status_label.config(text=text, fg=COLORS["text_dim"] if healthy else COLORS["danger"])
-        self.status_dot.config(fg=COLORS["success"] if healthy else COLORS["danger"])
+        return
 
-        if self.status_reset_after_id is not None:
-            self.after_cancel(self.status_reset_after_id)
-            self.status_reset_after_id = None
-
-        if temporary:
-            self.status_reset_after_id = self.after(1800, lambda: self._set_status("监听中", healthy=True))
+    def _open_image_storage_location(self) -> None:
+        image_dir = self.store.image_dir
+        image_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if IS_WINDOWS:
+                os.startfile(str(image_dir))
+            elif IS_MACOS:
+                subprocess.Popen(["open", str(image_dir)])
+            else:
+                subprocess.Popen(["xdg-open", str(image_dir)])
+        except Exception as exc:
+            messagebox.showerror("打开失败", f"没有成功打开图片存储位置。\n\n{image_dir}\n\n{exc}")
 
     def _show_about_dialog(self) -> None:
         message = "\n".join(
@@ -3308,9 +4114,8 @@ class ClipboardManagerApp(tk.Tk):
                     self._refresh_list()
 
             self._apply_auto_delete_policy()
-            self._set_status("监听中", healthy=True)
         except Exception:
-            self._set_status("监听异常", healthy=False)
+            pass
         finally:
             self.poll_after_id = self.after(POLL_INTERVAL_MS, self._poll_clipboard)
 
@@ -3320,6 +4125,12 @@ class ClipboardManagerApp(tk.Tk):
         for entry in self.entries:
             if self.current_filter == "favorite":
                 if not entry.is_favorite:
+                    continue
+            elif self.current_filter == "text":
+                if not entry_has_text(entry):
+                    continue
+            elif self.current_filter == "image":
+                if not entry_has_image(entry):
                     continue
             elif self.current_filter != "all" and entry.type != self.current_filter:
                 continue
@@ -3343,8 +4154,8 @@ class ClipboardManagerApp(tk.Tk):
     def _refresh_filter_buttons(self) -> None:
         counts = {
             "all": len(self.entries),
-            "text": sum(1 for entry in self.entries if entry.type == "text"),
-            "image": sum(1 for entry in self.entries if entry.type == "image"),
+            "text": sum(1 for entry in self.entries if entry_has_text(entry)),
+            "image": sum(1 for entry in self.entries if entry_has_image(entry)),
             "other": sum(1 for entry in self.entries if entry.type == "other"),
             "favorite": sum(1 for entry in self.entries if entry.is_favorite),
         }
@@ -3497,15 +4308,15 @@ class ClipboardManagerApp(tk.Tk):
         short_time = entry.created_at[11:19]
         prefix = TYPE_LABELS.get(entry.type, "记录")
         badges: list[str] = []
-        if entry.type == "text" and entry.has_rich_text:
+        if entry_has_text(entry) and entry.has_rich_text:
             badges.append("富")
-        if entry.type == "text" and has_formula_candidate(entry.plain_text):
+        if entry_has_text(entry) and has_formula_candidate(entry.plain_text):
             badges.append("公式")
         badge_text = f" [{' / '.join(badges)}]" if badges else ""
         return f"[{short_time}] {prefix}{badge_text}  {entry.summary}"
 
     def _purge_stale_drafts(self) -> None:
-        valid_ids = {entry.id for entry in self.entries if entry.type == "text"}
+        valid_ids = {entry.id for entry in self.entries if entry_has_text(entry)}
         self.draft_payload_by_entry_id = {
             entry_id: payload
             for entry_id, payload in self.draft_payload_by_entry_id.items()
@@ -3520,6 +4331,12 @@ class ClipboardManagerApp(tk.Tk):
             entry_id: history_index
             for entry_id, history_index in self.preview_history_index_by_entry_id.items()
             if entry_id in valid_ids
+        }
+        valid_image_ids = {entry.id for entry in self.entries if entry_has_image(entry)}
+        self.selected_image_index_by_entry_id = {
+            entry_id: image_index
+            for entry_id, image_index in self.selected_image_index_by_entry_id.items()
+            if entry_id in valid_image_ids
         }
 
     def _refresh_list(self) -> None:
@@ -3559,13 +4376,41 @@ class ClipboardManagerApp(tk.Tk):
     def _selected_entry(self) -> ClipboardEntry | None:
         return self._find_entry_by_id(self.selected_entry_id)
 
+    def _image_paths_for_entry(self, entry: ClipboardEntry | None) -> list[str]:
+        return [path for path in entry_image_paths(entry) if Path(path).exists()]
+
+    def _selected_image_index_for_entry(self, entry: ClipboardEntry | None) -> int | None:
+        if entry is None:
+            return None
+        index = self.selected_image_index_by_entry_id.get(entry.id)
+        paths = self._image_paths_for_entry(entry)
+        if index is None or index < 0 or index >= len(paths):
+            return None
+        return index
+
+    def _selected_image_path_for_entry(self, entry: ClipboardEntry | None) -> str | None:
+        index = self._selected_image_index_for_entry(entry)
+        if index is None:
+            return None
+        paths = self._image_paths_for_entry(entry)
+        return paths[index]
+
+    def _preview_image_path_for_entry(self, entry: ClipboardEntry | None) -> str | None:
+        paths = self._image_paths_for_entry(entry)
+        if not paths:
+            return None
+        selected_index = self._selected_image_index_for_entry(entry)
+        if selected_index is not None:
+            return paths[selected_index]
+        return paths[0]
+
     def _draft_payload_for_entry(self, entry: ClipboardEntry | None) -> RichTextPayload | None:
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return None
         return self.draft_payload_by_entry_id.get(entry.id)
 
     def _effective_text_for_entry(self, entry: ClipboardEntry | None) -> str | None:
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return None
         draft_payload = self._draft_payload_for_entry(entry)
         if draft_payload is not None:
@@ -3573,7 +4418,7 @@ class ClipboardManagerApp(tk.Tk):
         return entry.plain_text or ""
 
     def _effective_text_payload(self, entry: ClipboardEntry | None) -> RichTextPayload | None:
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return None
 
         draft_payload = self._draft_payload_for_entry(entry)
@@ -3583,6 +4428,87 @@ class ClipboardManagerApp(tk.Tk):
 
     def _capture_preview_text_payload(self) -> RichTextPayload:
         return serialize_text_widget_rich_payload(self.preview_text)
+
+    def _clear_inline_preview_images(self) -> None:
+        for mark_name in self.inline_preview_image_marks.values():
+            with contextlib.suppress(tk.TclError):
+                self.preview_text.mark_unset(mark_name)
+        self.inline_preview_image_marks = {}
+        self.inline_preview_photos = []
+
+    def _inline_preview_max_size(self) -> tuple[int, int]:
+        width_candidates = (
+            self.preview_text.winfo_width(),
+            self.preview_text_frame.winfo_width(),
+            self.preview_frame.winfo_width(),
+        )
+        container_width = max((width for width in width_candidates if width), default=720)
+        max_width = min(max(container_width - 72, 220), 860)
+        max_height = min(max(int(max_width * 0.72), 180), 520)
+        return max_width, max_height
+
+    def _load_inline_preview_photo(self, image_path: str, image_index: int) -> ImageTk.PhotoImage | None:
+        if not image_path or not Path(image_path).exists():
+            return None
+        try:
+            preview = load_image_safely(image_path)
+            preview.thumbnail(self._inline_preview_max_size(), Image.LANCZOS)
+            photo = ImageTk.PhotoImage(preview)
+        except Exception:
+            return None
+        self.inline_preview_photos.append(photo)
+        return photo
+
+    def _remember_inline_preview_image(self, image_index: int, text_index: str) -> None:
+        mark_name = f"inline_preview_image_{image_index}"
+        with contextlib.suppress(tk.TclError):
+            self.preview_text.mark_set(mark_name, text_index)
+            self.preview_text.mark_gravity(mark_name, "left")
+            self.inline_preview_image_marks[image_index] = mark_name
+
+    def _scroll_to_inline_preview_image(self, image_index: int) -> None:
+        mark_name = self.inline_preview_image_marks.get(image_index)
+        if not mark_name:
+            return
+        with contextlib.suppress(tk.TclError):
+            self.preview_text.see(mark_name)
+
+    def _split_inline_image_entries(
+        self,
+        payload: RichTextPayload,
+        image_paths: list[str],
+    ) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+        image_entries = list(enumerate(image_paths))
+        if not image_entries:
+            return [], []
+
+        html_source_count = len(html_image_sources(payload.html_content)) if payload.html_content else 0
+        if html_source_count <= 0:
+            return [], image_entries
+
+        if len(image_entries) > html_source_count:
+            split_index = len(image_entries) - html_source_count
+            return image_entries[split_index:], image_entries[:split_index]
+
+        return image_entries[:html_source_count], image_entries[html_source_count:]
+
+    def _append_inline_preview_images(self, image_entries: list[tuple[int, str]]) -> None:
+        if not image_entries:
+            return
+        was_programmatic_update = self.preview_text_is_programmatic_update
+        self.preview_text_is_programmatic_update = True
+        try:
+            renderer = HtmlPreviewRenderer(
+                self.preview_text,
+                "end-1c",
+                image_loader=self._load_inline_preview_photo,
+                on_image_inserted=self._remember_inline_preview_image,
+            )
+            renderer.append_images(image_entries)
+            self.preview_text.mark_set("insert", "1.0")
+            self.preview_text.edit_modified(False)
+        finally:
+            self.preview_text_is_programmatic_update = was_programmatic_update
 
     def _store_draft_payload(self, entry: ClipboardEntry, payload: RichTextPayload) -> None:
         if rich_payload_matches_entry(entry, payload):
@@ -3633,7 +4559,11 @@ class ClipboardManagerApp(tk.Tk):
         payload = history[target_index]
         self.preview_history_is_restoring = True
         try:
-            self._render_payload_in_preview(payload)
+            if entry.type == "mixed":
+                self._render_payload_in_preview(payload, mode="mixed", image_paths=self._image_paths_for_entry(entry))
+                self._render_mixed_images(entry)
+            else:
+                self._render_payload_in_preview(payload)
             self._store_draft_payload(entry, payload)
         finally:
             self.preview_history_is_restoring = False
@@ -3661,7 +4591,7 @@ class ClipboardManagerApp(tk.Tk):
         return widget_payload
 
     def _current_visible_plain_text(self) -> str:
-        if self.current_preview_mode != "text":
+        if self.current_preview_mode not in {"text", "mixed"}:
             return ""
         return self._capture_preview_text_payload().plain_text
 
@@ -3671,18 +4601,38 @@ class ClipboardManagerApp(tk.Tk):
             return None
         return serialize_text_widget_rich_payload(self.preview_text, selected_range[0], selected_range[1])
 
-    def _render_payload_in_preview(self, payload: RichTextPayload) -> None:
+    def _render_payload_in_preview(
+        self,
+        payload: RichTextPayload,
+        mode: str = "text",
+        image_paths: list[str] | None = None,
+    ) -> None:
+        image_paths = image_paths or []
+        image_entries: list[tuple[int, str]] = []
+        append_image_entries: list[tuple[int, str]] = []
+        if mode == "mixed" and image_paths:
+            image_entries, append_image_entries = self._split_inline_image_entries(payload, image_paths)
+
         if rich_payload_has_formatting(payload) and payload.html_content:
-            self._set_preview_rich_text(payload.html_content, payload.plain_text)
+            self._set_preview_rich_text(
+                payload.html_content,
+                payload.plain_text,
+                mode=mode,
+                image_entries=image_entries,
+                append_image_entries=append_image_entries,
+            )
         elif rich_payload_has_formatting(payload) and payload.rtf_content:
-            self._set_preview_rtf_text(payload.rtf_content, payload.plain_text)
+            self._set_preview_rtf_text(payload.rtf_content, payload.plain_text, mode=mode)
+            self._append_inline_preview_images(image_entries + append_image_entries)
         else:
-            self._set_preview_text(payload.plain_text)
+            self._set_preview_text(payload.plain_text, mode=mode)
+            self._append_inline_preview_images(image_entries + append_image_entries)
+        self._set_preview_link_hint(rich_payload_link_hint_urls(payload))
 
     def _sync_formula_button_for_entry(self, entry: ClipboardEntry | None) -> None:
         if self.formula_button is None:
             return
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             self.formula_button.config(state="disabled", bg=COLORS["card"], fg=COLORS["accent_soft"])
             return
         self.formula_button.config(state="normal", bg=COLORS["card"], fg=COLORS["accent"])
@@ -3700,12 +4650,13 @@ class ClipboardManagerApp(tk.Tk):
             )
             return
 
-        is_image_entry = (
-            entry is not None
-            and entry.type == "image"
-            and bool(entry.image_path)
-            and Path(entry.image_path).exists()
-        )
+        if entry is not None and entry.type == "mixed":
+            image_path = self._selected_image_path_for_entry(entry)
+        elif entry is not None and entry.type == "image" and len(self._image_paths_for_entry(entry)) > 1:
+            image_path = self._selected_image_path_for_entry(entry)
+        else:
+            image_path = self._preview_image_path_for_entry(entry)
+        is_image_entry = bool(image_path and Path(image_path).exists())
         enabled = OCR_SUPPORTED_PLATFORM and is_image_entry
         self.ocr_button.config(
             state="normal" if enabled else "disabled",
@@ -3719,7 +4670,7 @@ class ClipboardManagerApp(tk.Tk):
             return
 
         entry = self._selected_entry()
-        if entry is None or entry.type != "image" or not entry.image_path:
+        if not entry_has_image(entry):
             self._sync_ocr_button_for_entry(entry)
             return
 
@@ -3727,7 +4678,17 @@ class ClipboardManagerApp(tk.Tk):
             messagebox.showinfo("识别文字", "当前系统暂不支持 OCR。")
             return
 
-        image_path = Path(entry.image_path)
+        selected_image_path = (
+            self._selected_image_path_for_entry(entry)
+            if entry.type == "mixed" or (entry.type == "image" and len(self._image_paths_for_entry(entry)) > 1)
+            else self._preview_image_path_for_entry(entry)
+        )
+        if not selected_image_path:
+            self._sync_ocr_button_for_entry(entry)
+            self._set_status("请先选中一张图片再识别", healthy=False, temporary=True)
+            return
+
+        image_path = Path(selected_image_path)
         if not image_path.exists():
             self._sync_ocr_button_for_entry(entry)
             self._set_status("图片文件不存在，无法识别", healthy=False, temporary=True)
@@ -3901,6 +4862,76 @@ class ClipboardManagerApp(tk.Tk):
         elif self.btn_save_text.winfo_manager():
             self.btn_save_text.pack_forget()
 
+    def _set_preview_link_hint(self, urls: list[str]) -> None:
+        if self.preview_link_bar is None or self.preview_link_label is None:
+            return
+
+        urls = unique_urls(urls)
+        self.preview_link_label.config(state="normal")
+        if not urls:
+            self.preview_link_bar.pack_forget()
+            self.preview_link_label.delete("1.0", "end")
+            return
+
+        visible_urls = urls[:3]
+        extra_count = len(urls) - len(visible_urls)
+        suffix = f"\n等 {extra_count} 个链接" if extra_count > 0 else ""
+        hint_text = "链接地址：\n" + "\n".join(visible_urls) + suffix
+        self.preview_link_label.delete("1.0", "end")
+        self.preview_link_label.insert("1.0", hint_text)
+        self.preview_link_label.config(height=min(max(hint_text.count("\n") + 1, 2), 5))
+        if not self.preview_link_bar.winfo_manager():
+            if self.preview_text_body is not None:
+                self.preview_link_bar.pack(side="top", fill="x", padx=14, pady=(14, 0), before=self.preview_text_body)
+            else:
+                self.preview_link_bar.pack(side="top", fill="x", padx=14, pady=(14, 0))
+
+    def _select_all_link_hint(self, _event=None) -> str:
+        if self.preview_link_label is not None:
+            self.preview_link_label.tag_add("sel", "1.0", "end-1c")
+            self.preview_link_label.mark_set("insert", "1.0")
+        return "break"
+
+    def _copy_from_link_hint_selection(self, _event=None) -> str:
+        if self.preview_link_label is None:
+            return "break"
+        try:
+            content = self.preview_link_label.get("sel.first", "sel.last")
+        except tk.TclError:
+            content = "\n".join(
+                line.strip()
+                for line in self.preview_link_label.get("1.0", "end-1c").splitlines()
+                if normalize_web_url(line.strip())
+            )
+        content = content.strip()
+        if content:
+            self.clipboard_clear()
+            self.clipboard_append(content)
+            self.suppressed_snapshot_key = ("text", hash_rich_text(content))
+        return "break"
+
+    def _block_link_hint_edit(self, event) -> str | None:
+        keysym = (event.keysym or "").lower()
+        if (event.state & 0x4) and keysym in {"a", "c"}:
+            return None
+        if keysym in {
+            "left",
+            "right",
+            "up",
+            "down",
+            "home",
+            "end",
+            "prior",
+            "next",
+            "shift_l",
+            "shift_r",
+            "control_l",
+            "control_r",
+            "escape",
+        }:
+            return None
+        return "break"
+
     def _on_select(self, _event) -> None:
         selection = self.listbox.curselection()
         if not selection:
@@ -3916,11 +4947,109 @@ class ClipboardManagerApp(tk.Tk):
         self.selected_entry_id = entry.id
         self._render_entry(entry)
 
+    def _mixed_image_panel_height(self) -> int:
+        return self._thumbnail_panel_height()
+
+    @staticmethod
+    def _usable_widget_dimension(value: int, minimum: int) -> int:
+        return value if value >= minimum else 0
+
+    def _preview_area_size(self) -> tuple[int, int]:
+        with contextlib.suppress(Exception):
+            self.update_idletasks()
+        width = (
+            self._usable_widget_dimension(self.preview_image_frame.winfo_width(), 120)
+            or self._usable_widget_dimension(self.preview_frame.winfo_width(), 120)
+            or self._usable_widget_dimension(self.winfo_width(), 120)
+            or WINDOW_WIDTH
+        )
+        height = (
+            self._usable_widget_dimension(self.preview_image_frame.winfo_height(), 120)
+            or self._usable_widget_dimension(self.preview_frame.winfo_height(), 120)
+            or self._usable_widget_dimension(self.winfo_height(), 120)
+            or WINDOW_HEIGHT
+        )
+        return width, height
+
+    def _thumbnail_size(self) -> int:
+        with contextlib.suppress(Exception):
+            self.update_idletasks()
+        width = (
+            self._usable_widget_dimension(self.preview_frame.winfo_width(), 120)
+            or self._usable_widget_dimension(self.winfo_width(), 120)
+            or WINDOW_WIDTH
+        )
+        height = (
+            self._usable_widget_dimension(self.preview_frame.winfo_height(), 120)
+            or self._usable_widget_dimension(self.winfo_height(), 120)
+            or WINDOW_HEIGHT
+        )
+        size = min(width // 5, height // 4)
+        return min(max(size, THUMBNAIL_MIN_SIZE), THUMBNAIL_MAX_SIZE)
+
+    def _thumbnail_panel_height(self) -> int:
+        return self._thumbnail_size() + 28
+
+    def _configure_thumbnail_panel(self, *, collection: bool) -> None:
+        if self.mixed_thumbnail_shell is None or self.mixed_thumbnail_canvas is None:
+            return
+        panel_height = self._thumbnail_panel_height()
+        self.mixed_thumbnail_shell.configure(height=panel_height)
+        self.mixed_thumbnail_canvas.configure(height=panel_height - 8)
+        self.mixed_thumbnail_shell.pack_forget()
+        if collection:
+            self.mixed_thumbnail_shell.pack(side="bottom", fill="x", expand=False, padx=10, pady=(0, 2))
+        else:
+            self.mixed_thumbnail_shell.pack(side="top", fill="x", expand=True, padx=10, pady=(8, 2))
+
+    def _sync_mixed_thumbnail_canvas(self) -> None:
+        if (
+            self.mixed_thumbnail_canvas is None
+            or self.mixed_thumbnail_frame is None
+            or self.mixed_thumbnail_window is None
+        ):
+            return
+        canvas_width = max(self.mixed_thumbnail_canvas.winfo_width(), 1)
+        canvas_height = max(self.mixed_thumbnail_canvas.winfo_height(), 1)
+        frame_width = max(self.mixed_thumbnail_frame.winfo_reqwidth(), 1)
+        frame_height = max(self.mixed_thumbnail_frame.winfo_reqheight(), 1)
+        x_offset = max((canvas_width - frame_width) // 2, 0)
+        y_offset = max((canvas_height - frame_height) // 2, 0)
+        self.mixed_thumbnail_canvas.coords(self.mixed_thumbnail_window, x_offset, y_offset)
+        self.mixed_thumbnail_canvas.configure(
+            scrollregion=(0, 0, max(canvas_width, frame_width), max(canvas_height, frame_height))
+        )
+        if frame_width <= canvas_width:
+            self.mixed_thumbnail_canvas.xview_moveto(0)
+        if self.mixed_thumbnail_scroll is not None:
+            first, last = self.mixed_thumbnail_canvas.xview()
+            self.mixed_thumbnail_scroll.set(first, last)
+
+    def _on_mixed_thumbnail_mousewheel(self, event) -> str:
+        if self.mixed_thumbnail_canvas is None:
+            return "break"
+        scroll_region = self.mixed_thumbnail_canvas.cget("scrollregion")
+        if not scroll_region:
+            return "break"
+        try:
+            _, _, region_right, _ = [float(part) for part in str(scroll_region).split()]
+        except ValueError:
+            return "break"
+        if region_right <= max(self.mixed_thumbnail_canvas.winfo_width(), 1):
+            return "break"
+        delta = -1 if event.delta > 0 else 1
+        self.mixed_thumbnail_canvas.xview_scroll(delta * 3, "units")
+        if self.mixed_thumbnail_scroll is not None:
+            self.mixed_thumbnail_scroll.pulse()
+        return "break"
+
     def _set_preview_mode(self, mode: str) -> None:
         if self.current_preview_mode == mode:
             return
         for widget in (self.preview_empty, self.preview_text_frame, self.preview_image_frame):
             widget.pack_forget()
+        self.preview_text_frame.pack_propagate(True)
+        self.preview_image_frame.pack_propagate(True)
 
         if mode == "empty":
             self.preview_empty.pack(expand=True)
@@ -3928,15 +5057,21 @@ class ClipboardManagerApp(tk.Tk):
             self.preview_text_frame.pack(fill="both", expand=True)
         elif mode == "image":
             self.preview_image_frame.pack(fill="both", expand=True)
+        elif mode == "mixed":
+            self.preview_image_frame.configure(height=self._mixed_image_panel_height())
+            self.preview_image_frame.pack_propagate(False)
+            self.preview_image_frame.pack(side="bottom", fill="x", expand=False)
+            self.preview_text_frame.pack(side="top", fill="both", expand=True)
 
         self.current_preview_mode = mode
 
-    def _set_preview_text(self, content: str, retain_edit: bool = False) -> None:
-        self._set_preview_mode("text")
+    def _set_preview_text(self, content: str, retain_edit: bool = False, mode: str = "text") -> None:
+        self._set_preview_mode(mode)
         if retain_edit:
             return
         self.preview_text_is_programmatic_update = True
         try:
+            self._clear_inline_preview_images()
             self.preview_text.delete("1.0", "end")
             self.preview_text.insert("1.0", content)
             self.preview_text.mark_set("insert", "1.0")
@@ -3949,17 +5084,31 @@ class ClipboardManagerApp(tk.Tk):
         if entry is not None and entry.text_content is not None:
             self.draft_payload_by_entry_id.pop(entry.id, None)
             payload = entry_rich_payload(entry)
-            self._render_payload_in_preview(payload)
+            if entry.type == "mixed":
+                self._render_payload_in_preview(payload, mode="mixed", image_paths=self._image_paths_for_entry(entry))
+                self._render_mixed_images(entry)
+            else:
+                self._render_payload_in_preview(payload)
             self._reset_preview_history(entry, payload)
             self._sync_formula_button_for_entry(entry)
 
     def _save_text(self) -> None:
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return
         payload = self._capture_preview_text_payload()
         has_rich_text = rich_payload_has_formatting(payload)
-        new_hash = hash_rich_text(payload.plain_text, payload.html_content, payload.rtf_content)
+        image_paths = self._image_paths_for_entry(entry)
+        if entry_has_image(entry) and image_paths:
+            images = [load_image_safely(path) for path in image_paths]
+            new_hash = hash_mixed_content(
+                payload.plain_text,
+                payload.html_content,
+                payload.rtf_content,
+                images,
+            )
+        else:
+            new_hash = hash_rich_text(payload.plain_text, payload.html_content, payload.rtf_content)
         if not rich_payload_matches_entry(entry, payload):
             entry.plain_text = payload.plain_text
             entry.summary = summarize_text(payload.plain_text)
@@ -3967,6 +5116,10 @@ class ClipboardManagerApp(tk.Tk):
             entry.html_content = payload.html_content
             entry.rtf_content = payload.rtf_content
             entry.source_formats_json = text_source_formats_json(has_rich_text)
+            if entry.type == "mixed":
+                source_formats = json.loads(entry.source_formats_json)
+                source_formats.append(format_clipboard_name(win32clipboard.CF_DIB))
+                entry.source_formats_json = json_dumps(source_formats)
             entry.has_rich_text = has_rich_text
             self.draft_payload_by_entry_id.pop(entry.id, None)
             self.store.update_entry_text(
@@ -3991,46 +5144,76 @@ class ClipboardManagerApp(tk.Tk):
     def _toggle_favorite_status(self) -> None:
         pass
 
-    def _set_preview_rich_text(self, html_content: str, fallback_text: str) -> None:
+    def _set_preview_rich_text(
+        self,
+        html_content: str,
+        fallback_text: str,
+        mode: str = "text",
+        image_entries: list[tuple[int, str]] | None = None,
+        append_image_entries: list[tuple[int, str]] | None = None,
+    ) -> None:
+        image_entries = image_entries or []
+        append_image_entries = append_image_entries or []
+        fallback_image_entries = image_entries + append_image_entries
         fragment = extract_html_fragment(html_content)
         if not fragment:
-            self._set_preview_text(fallback_text)
+            self._set_preview_text(fallback_text, mode=mode)
+            self._append_inline_preview_images(fallback_image_entries)
             return
 
-        self._set_preview_mode("text")
+        self._set_preview_mode(mode)
         self.preview_text_is_programmatic_update = True
         try:
+            self._clear_inline_preview_images()
             self.preview_text.delete("1.0", "end")
             try:
-                renderer = HtmlPreviewRenderer(self.preview_text, "1.0")
+                renderer = HtmlPreviewRenderer(
+                    self.preview_text,
+                    "1.0",
+                    image_entries=image_entries,
+                    image_loader=self._load_inline_preview_photo,
+                    on_image_inserted=self._remember_inline_preview_image,
+                )
                 renderer.feed(fragment)
                 renderer.close()
+                renderer.append_images(renderer.remaining_image_entries() + append_image_entries)
             except Exception:
-                self._set_preview_text(fallback_text)
+                self._clear_inline_preview_images()
+                self.preview_text.delete("1.0", "end")
+                self.preview_text.insert("1.0", fallback_text)
+                self._append_inline_preview_images(fallback_image_entries)
+                self.preview_text.mark_set("insert", "1.0")
+                self.preview_text.edit_modified(False)
                 return
 
-            if not self.preview_text.get("1.0", "end-1c").strip():
-                self._set_preview_text(fallback_text)
+            if not self.preview_text.get("1.0", "end-1c").strip() and not self.inline_preview_image_marks:
+                self._clear_inline_preview_images()
+                self.preview_text.delete("1.0", "end")
+                self.preview_text.insert("1.0", fallback_text)
+                self._append_inline_preview_images(fallback_image_entries)
+                self.preview_text.mark_set("insert", "1.0")
+                self.preview_text.edit_modified(False)
                 return
             self.preview_text.mark_set("insert", "1.0")
             self.preview_text.edit_modified(False)
         finally:
             self.preview_text_is_programmatic_update = False
 
-    def _set_preview_rtf_text(self, rtf_content: str, fallback_text: str) -> None:
-        self._set_preview_mode("text")
+    def _set_preview_rtf_text(self, rtf_content: str, fallback_text: str, mode: str = "text") -> None:
+        self._set_preview_mode(mode)
         self.preview_text_is_programmatic_update = True
         try:
+            self._clear_inline_preview_images()
             self.preview_text.delete("1.0", "end")
             try:
                 renderer = RtfPreviewRenderer(self.preview_text, "1.0")
                 renderer.render(rtf_content)
             except Exception:
-                self._set_preview_text(fallback_text)
+                self._set_preview_text(fallback_text, mode=mode)
                 return
 
             if not self.preview_text.get("1.0", "end-1c").strip():
-                self._set_preview_text(fallback_text)
+                self._set_preview_text(fallback_text, mode=mode)
                 return
             self.preview_text.mark_set("insert", "1.0")
             self.preview_text.edit_modified(False)
@@ -4081,7 +5264,7 @@ class ClipboardManagerApp(tk.Tk):
 
     def _apply_preview_script_tag(self, tag_name: str) -> None:
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return
         selected_range = self._selected_preview_range()
         if selected_range is None:
@@ -4098,7 +5281,7 @@ class ClipboardManagerApp(tk.Tk):
 
     def _clear_preview_script_tags(self) -> None:
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return
         selected_range = self._selected_preview_range()
         if selected_range is None:
@@ -4112,26 +5295,230 @@ class ClipboardManagerApp(tk.Tk):
         self._record_preview_history(entry, payload)
         self._sync_formula_button_for_entry(entry)
 
-    def _set_preview_image(self, image_path: str | None) -> None:
+    def _show_single_image_view(self) -> None:
+        if self.mixed_image_view is not None:
+            self.mixed_image_view.pack_forget()
+        if not self.preview_image_label.winfo_manager():
+            self.preview_image_label.pack(fill="both", expand=True)
+
+    def _show_mixed_image_view(self) -> None:
+        self.preview_image_label.pack_forget()
+        if self.mixed_preview_label is not None and self.mixed_preview_label.winfo_manager():
+            self.mixed_preview_label.pack_forget()
+        self._configure_thumbnail_panel(collection=False)
+        if self.mixed_image_view is not None and not self.mixed_image_view.winfo_manager():
+            self.mixed_image_view.pack(fill="both", expand=True)
+
+    def _show_image_collection_view(self) -> None:
+        self.preview_image_label.pack_forget()
+        if self.mixed_image_view is not None and not self.mixed_image_view.winfo_manager():
+            self.mixed_image_view.pack(fill="both", expand=True)
+        if self.mixed_preview_label is not None:
+            self.mixed_preview_label.pack_forget()
+            self.mixed_preview_label.pack(side="top", fill="both", expand=True, padx=10, pady=(10, 6))
+        self._configure_thumbnail_panel(collection=True)
+
+    def _set_preview_image(self, image_path: str | None, mode: str = "image") -> None:
+        self._show_single_image_view()
+        self._clear_inline_preview_images()
         if not image_path or not Path(image_path).exists():
             self.preview_image_label.config(cursor="arrow")
-            self._set_preview_text("图片文件不存在，可能已经被清理。")
+            if mode == "mixed":
+                self.preview_image_label.config(image="", text="图片文件不存在，可能已经被清理。")
+            else:
+                self._set_preview_text("图片文件不存在，可能已经被清理。")
             return
 
-        self._set_preview_mode("image")
-        max_width = max(self.preview_frame.winfo_width() - 24, 200)
-        max_height = max(self.preview_frame.winfo_height() - 24, 200)
+        self._set_preview_mode(mode)
+        container_width, container_height = self._preview_area_size()
+        if mode == "mixed":
+            container_height = self._mixed_image_panel_height()
+            self.preview_image_frame.configure(height=container_height)
+        max_width = max(container_width - 24, 200)
+        max_height = max(container_height - 24, 180)
 
         preview = load_image_safely(image_path)
         preview.thumbnail((max_width, max_height), Image.LANCZOS)
         self.preview_photo = ImageTk.PhotoImage(preview)
         self.preview_image_label.config(image=self.preview_photo, text="", cursor="hand2")
 
-    def _open_zoomed_image(self, _event=None) -> None:
-        entry = self._selected_entry()
-        if entry is None or entry.type != "image" or not entry.image_path or not Path(entry.image_path).exists():
+    def _render_image_collection(self, entry: ClipboardEntry) -> None:
+        image_paths = self._image_paths_for_entry(entry)
+        self._set_preview_mode("image")
+        self._show_image_collection_view()
+        thumbnail_size = self._thumbnail_size()
+
+        if self.mixed_thumbnail_frame is not None:
+            for widget in self.mixed_thumbnail_frame.winfo_children():
+                widget.destroy()
+        self.mixed_thumbnail_photos = []
+
+        if not image_paths:
+            self.mixed_preview_photo = None
+            if self.mixed_preview_label is not None:
+                self.mixed_preview_label.config(image="", text="图片文件不存在，可能已经被清理。", cursor="arrow")
+            if self.mixed_thumbnail_frame is not None:
+                tk.Label(
+                    self.mixed_thumbnail_frame,
+                    text="图片文件不存在，可能已经被清理。",
+                    bg=COLORS["panel"],
+                    fg=COLORS["text_dim"],
+                    font=FONT_SMALL,
+                ).pack(side="left", padx=12, pady=18)
+            self._sync_mixed_thumbnail_canvas()
+            self._sync_ocr_button_for_entry(entry)
             return
 
+        selected_index = self._selected_image_index_for_entry(entry)
+        preview_index = selected_index if selected_index is not None else 0
+        preview_path = image_paths[preview_index]
+
+        if self.mixed_preview_label is not None:
+            container_width, container_height = self._preview_area_size()
+            max_width = max(container_width - 36, 220)
+            max_height = max(container_height - self._mixed_image_panel_height() - 42, 180)
+            preview = load_image_safely(preview_path)
+            preview.thumbnail((max_width, max_height), Image.LANCZOS)
+            self.mixed_preview_photo = ImageTk.PhotoImage(preview)
+            self.mixed_preview_label.config(image=self.mixed_preview_photo, text="", cursor="hand2")
+
+        if self.mixed_thumbnail_frame is not None:
+            for index, image_path in enumerate(image_paths):
+                try:
+                    thumbnail = load_image_safely(image_path)
+                except Exception:
+                    continue
+                thumbnail.thumbnail((thumbnail_size, thumbnail_size), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(thumbnail)
+                self.mixed_thumbnail_photos.append(photo)
+                is_selected = selected_index == index
+                tile = tk.Label(
+                    self.mixed_thumbnail_frame,
+                    image=photo,
+                    bg=COLORS["card_active"] if is_selected else COLORS["panel"],
+                    highlightthickness=2 if is_selected else 1,
+                    highlightbackground=COLORS["accent"] if is_selected else COLORS["border"],
+                    bd=0,
+                    padx=6,
+                    pady=6,
+                    cursor="hand2",
+                )
+                tile.pack(side="left", padx=(8 if index == 0 else 5, 5), pady=(4, 2))
+                tile.bind("<Button-1>", lambda event, image_index=index: self._on_mixed_thumbnail_click(event, image_index))
+                tile.bind("<MouseWheel>", self._on_mixed_thumbnail_mousewheel)
+                tile.bind(
+                    "<Enter>",
+                    lambda _event: self.mixed_thumbnail_scroll.pulse()
+                    if self.mixed_thumbnail_scroll is not None
+                    else None,
+                )
+
+        self._sync_mixed_thumbnail_canvas()
+        self._sync_ocr_button_for_entry(entry)
+
+    def _render_mixed_images(self, entry: ClipboardEntry) -> None:
+        image_paths = self._image_paths_for_entry(entry)
+        self._set_preview_mode("mixed")
+        self._show_mixed_image_view()
+        self.preview_image_frame.configure(height=self._mixed_image_panel_height())
+        thumbnail_size = self._thumbnail_size()
+
+        if self.mixed_thumbnail_frame is not None:
+            for widget in self.mixed_thumbnail_frame.winfo_children():
+                widget.destroy()
+        self.mixed_thumbnail_photos = []
+
+        if not image_paths:
+            self.mixed_preview_photo = None
+            if self.mixed_thumbnail_frame is not None:
+                tk.Label(
+                    self.mixed_thumbnail_frame,
+                    text="图片文件不存在，可能已经被清理。",
+                    bg=COLORS["panel"],
+                    fg=COLORS["text_dim"],
+                    font=FONT_SMALL,
+                ).pack(side="left", padx=12, pady=18)
+            if self.mixed_thumbnail_canvas is not None:
+                self._sync_mixed_thumbnail_canvas()
+            self._sync_ocr_button_for_entry(entry)
+            return
+
+        selected_index = self._selected_image_index_for_entry(entry)
+        self.mixed_preview_photo = None
+
+        if self.mixed_thumbnail_frame is not None:
+            for index, image_path in enumerate(image_paths):
+                try:
+                    thumbnail = load_image_safely(image_path)
+                except Exception:
+                    continue
+                thumbnail.thumbnail((thumbnail_size, thumbnail_size), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(thumbnail)
+                self.mixed_thumbnail_photos.append(photo)
+                is_selected = selected_index == index
+                tile = tk.Label(
+                    self.mixed_thumbnail_frame,
+                    image=photo,
+                    bg=COLORS["card_active"] if is_selected else COLORS["panel"],
+                    highlightthickness=2 if is_selected else 1,
+                    highlightbackground=COLORS["accent"] if is_selected else COLORS["border"],
+                    bd=0,
+                    padx=6,
+                    pady=6,
+                    cursor="hand2",
+                )
+                tile.pack(side="left", padx=(8 if index == 0 else 5, 5), pady=(4, 2))
+                tile.bind("<Button-1>", lambda event, image_index=index: self._on_mixed_thumbnail_click(event, image_index))
+                tile.bind("<MouseWheel>", self._on_mixed_thumbnail_mousewheel)
+                tile.bind(
+                    "<Enter>",
+                    lambda _event: self.mixed_thumbnail_scroll.pulse()
+                    if self.mixed_thumbnail_scroll is not None
+                    else None,
+                )
+
+        if self.mixed_thumbnail_canvas is not None:
+            self._sync_mixed_thumbnail_canvas()
+        self._sync_ocr_button_for_entry(entry)
+
+    def _on_mixed_thumbnail_click(self, _event, image_index: int) -> str:
+        entry = self._selected_entry()
+        if entry is None or entry.type not in {"image", "mixed"}:
+            return "break"
+        if self._selected_image_index_for_entry(entry) == image_index:
+            image_paths = self._image_paths_for_entry(entry)
+            if 0 <= image_index < len(image_paths):
+                self._open_zoomed_image_path(image_paths[image_index])
+            return "break"
+        self.selected_image_index_by_entry_id[entry.id] = image_index
+        if entry.type == "mixed":
+            self._render_mixed_images(entry)
+            self._scroll_to_inline_preview_image(image_index)
+        else:
+            self._render_image_collection(entry)
+        self._set_status(f"已选中第 {image_index + 1} 张图片", healthy=True, temporary=True)
+        return "break"
+
+    def _clear_mixed_image_selection(self, _event=None) -> str:
+        entry = self._selected_entry()
+        if entry is not None and entry.type in {"image", "mixed"}:
+            if entry.id in self.selected_image_index_by_entry_id:
+                self.selected_image_index_by_entry_id.pop(entry.id, None)
+                if entry.type == "mixed":
+                    self._render_mixed_images(entry)
+                else:
+                    self._render_image_collection(entry)
+                self._set_status("已切换为复制全部内容", healthy=True, temporary=True)
+        return "break"
+
+    def _open_zoomed_image(self, _event=None) -> None:
+        entry = self._selected_entry()
+        image_path = self._preview_image_path_for_entry(entry)
+        if not image_path or not Path(image_path).exists():
+            return
+        self._open_zoomed_image_path(image_path)
+
+    def _open_zoomed_image_path(self, image_path: str) -> None:
         self._close_zoomed_image()
 
         screen_width = self.winfo_screenwidth()
@@ -4139,7 +5526,7 @@ class ClipboardManagerApp(tk.Tk):
         max_width = max(int(screen_width * 0.86), 400)
         max_height = max(int(screen_height * 0.82), 300)
 
-        self.zoom_source_image = load_image_safely(entry.image_path)
+        self.zoom_source_image = load_image_safely(image_path)
         source_width, source_height = self.zoom_source_image.size
         fit_scale = min(max_width / source_width, max_height / source_height, 1.0)
         self.zoom_base_size = (
@@ -4267,15 +5654,19 @@ class ClipboardManagerApp(tk.Tk):
             self._sync_ocr_button_for_entry(None)
             self.delete_button.config(state="disabled")
             self.preview_photo = None
+            self.mixed_preview_photo = None
+            self.mixed_thumbnail_photos = []
+            self._clear_inline_preview_images()
+            self._set_preview_link_hint([])
             self.preview_image_label.config(image="", text="", cursor="arrow")
             self._set_preview_text_actions(show_reset=False, show_save=False)
             self._set_preview_mode("empty")
             return
 
         badges: list[str] = []
-        if entry.type == "text" and entry.has_rich_text:
+        if entry_has_text(entry) and entry.has_rich_text:
             badges.append("富文本")
-        if entry.type == "text" and has_formula_candidate(entry.plain_text):
+        if entry_has_text(entry) and has_formula_candidate(entry.plain_text):
             badges.append("公式文本")
         badge_text = f"    状态：{' / '.join(badges)}" if badges else ""
         self.preview_header.config(
@@ -4296,36 +5687,57 @@ class ClipboardManagerApp(tk.Tk):
                 self._ensure_preview_history(entry)
             return
 
+        if entry.type == "mixed":
+            self.selected_image_index_by_entry_id.pop(entry.id, None)
+            image_paths = self._image_paths_for_entry(entry)
+            can_copy = "normal" if image_paths else "disabled"
+            self.copy_button.config(state=can_copy, text="复制到剪贴板", bg=COLORS["accent"])
+            self._sync_formula_button_for_entry(entry)
+            self._set_preview_text_actions(show_reset=True, show_save=True)
+            payload = self._effective_text_payload(entry)
+            if payload is not None:
+                self._render_payload_in_preview(payload, mode="mixed", image_paths=image_paths)
+                self._ensure_preview_history(entry)
+            self._render_mixed_images(entry)
+            return
+
         if entry.type == "image":
-            can_copy = "normal" if entry.image_path and Path(entry.image_path).exists() else "disabled"
+            self._set_preview_link_hint([])
+            self.selected_image_index_by_entry_id.pop(entry.id, None)
+            image_paths = self._image_paths_for_entry(entry)
+            can_copy = "normal" if image_paths else "disabled"
             self.copy_button.config(state=can_copy, text="复制到剪贴板", bg=COLORS["accent"])
             self._sync_formula_button_for_entry(None)
-            self._sync_ocr_button_for_entry(entry)
             self._set_preview_text_actions(show_reset=False, show_save=False)
-            self._set_preview_image(entry.image_path)
+            if len(image_paths) > 1:
+                self._render_image_collection(entry)
+            else:
+                self._set_preview_image(image_paths[0] if image_paths else None)
+                self._sync_ocr_button_for_entry(entry)
             return
 
         self.copy_button.config(state="disabled", text="复制到剪贴板", bg=COLORS["accent"])
         self._sync_formula_button_for_entry(None)
         self._sync_ocr_button_for_entry(None)
+        self._set_preview_link_hint([])
         self._set_preview_text_actions(show_reset=False, show_save=False)
         self._set_preview_text(self._other_preview_text(entry))
 
     def _block_preview_input(self, event):
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return "break"
         return None
 
     def _on_preview_edit_command(self, _event=None):
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return "break"
         return None
 
     def _paste_into_preview(self, _event=None):
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return "break"
 
         try:
@@ -4346,11 +5758,11 @@ class ClipboardManagerApp(tk.Tk):
 
     def _copy_from_preview_selection(self, _event=None):
         entry = self._selected_entry()
-        if entry is None or self.current_preview_mode != "text":
+        if entry is None or self.current_preview_mode not in {"text", "mixed"}:
             return "break"
 
         try:
-            if entry.type == "text":
+            if entry_has_text(entry):
                 payload = self._selected_text_payload()
                 if payload is None or payload.plain_text == "":
                     payload = self._current_full_text_payload(entry)
@@ -4376,13 +5788,13 @@ class ClipboardManagerApp(tk.Tk):
 
     def _undo_preview_edit(self, _event=None):
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return "break"
         return self._restore_preview_history(entry, -1)
 
     def _redo_preview_edit(self, _event=None):
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return "break"
         return self._restore_preview_history(entry, 1)
 
@@ -4406,7 +5818,7 @@ class ClipboardManagerApp(tk.Tk):
         self.preview_text.edit_modified(False)
 
         entry = self._selected_entry()
-        if entry is None or entry.type != "text":
+        if not entry_has_text(entry):
             return
 
         payload = self._capture_preview_text_payload()
@@ -4419,7 +5831,7 @@ class ClipboardManagerApp(tk.Tk):
         return "break"
 
     def _on_preview_resize(self, _event) -> None:
-        if self.current_preview_mode != "image":
+        if self.current_preview_mode not in {"image", "mixed"}:
             return
         if self.preview_resize_after_id is not None:
             self.after_cancel(self.preview_resize_after_id)
@@ -4428,8 +5840,14 @@ class ClipboardManagerApp(tk.Tk):
     def _rerender_selected_image(self) -> None:
         self.preview_resize_after_id = None
         entry = self._selected_entry()
-        if entry and entry.type == "image":
-            self._set_preview_image(entry.image_path)
+        if not entry_has_image(entry):
+            return
+        if entry.type == "mixed":
+            self._render_mixed_images(entry)
+        elif entry.type == "image" and len(self._image_paths_for_entry(entry)) > 1:
+            self._render_image_collection(entry)
+        else:
+            self._set_preview_image(self._preview_image_path_for_entry(entry))
 
     def _flash_copy_button(self, text: str) -> None:
         self.copy_button.config(text=text, bg=COLORS["success"])
@@ -4464,9 +5882,46 @@ class ClipboardManagerApp(tk.Tk):
                     "text",
                     hash_rich_text(payload.plain_text, payload.html_content, payload.rtf_content),
                 )
-            elif entry.type == "image" and entry.image_path:
-                self.platform_services.set_clipboard_image(entry.image_path)
-                self.suppressed_snapshot_key = entry.snapshot_key
+            elif entry.type == "mixed" and entry_has_image(entry):
+                payload = self._current_full_text_payload(entry)
+                image_paths = self._image_paths_for_entry(entry)
+                selected_image_path = self._selected_image_path_for_entry(entry)
+                if selected_image_path:
+                    self.platform_services.set_clipboard_image(selected_image_path)
+                    selected_image = load_image_safely(selected_image_path)
+                    self.suppressed_snapshot_key = ("image", hash_image(selected_image))
+                else:
+                    self.platform_services.set_clipboard_rich_text_and_images(
+                        payload.plain_text,
+                        payload.html_content,
+                        payload.rtf_content,
+                        image_paths,
+                    )
+                    local_html = html_with_local_image_paths(payload.plain_text, payload.html_content, image_paths)
+                    images = [load_image_safely(path) for path in image_paths]
+                    self.suppressed_snapshot_key = (
+                        "mixed",
+                        hash_mixed_content(
+                            payload.plain_text,
+                            local_html,
+                            payload.rtf_content,
+                            images,
+                        ),
+                    )
+            elif entry.type == "image" and entry_has_image(entry):
+                image_paths = self._image_paths_for_entry(entry)
+                selected_image_path = self._selected_image_path_for_entry(entry)
+                if selected_image_path:
+                    self.platform_services.set_clipboard_image(selected_image_path)
+                    selected_image = load_image_safely(selected_image_path)
+                    self.suppressed_snapshot_key = ("image", hash_image(selected_image))
+                elif len(image_paths) > 1:
+                    self.platform_services.set_clipboard_rich_text_and_images("", None, None, image_paths)
+                    images = [load_image_safely(path) for path in image_paths]
+                    self.suppressed_snapshot_key = ("image", hash_images(images))
+                else:
+                    self.platform_services.set_clipboard_image(image_paths[0])
+                    self.suppressed_snapshot_key = entry.snapshot_key
             else:
                 return
         except Exception as exc:
@@ -4479,7 +5934,7 @@ class ClipboardManagerApp(tk.Tk):
     def _copy_formula_selected(self) -> None:
         entry = self._selected_entry()
         source_text = self._current_visible_plain_text()
-        if entry is None or entry.type != "text" or not source_text:
+        if not entry_has_text(entry) or not source_text:
             return
 
         try:
@@ -4525,6 +5980,7 @@ class ClipboardManagerApp(tk.Tk):
         self.draft_payload_by_entry_id.pop(entry.id, None)
         self.preview_history_by_entry_id.pop(entry.id, None)
         self.preview_history_index_by_entry_id.pop(entry.id, None)
+        self.selected_image_index_by_entry_id.pop(entry.id, None)
         self.entries = self.store.load_entries()
         self.selected_entry_id = None
         self._refresh_list()
@@ -4543,6 +5999,7 @@ class ClipboardManagerApp(tk.Tk):
         self.draft_payload_by_entry_id.clear()
         self.preview_history_by_entry_id.clear()
         self.preview_history_index_by_entry_id.clear()
+        self.selected_image_index_by_entry_id.clear()
         self.selected_entry_id = None
         self._refresh_list()
         self._set_status("历史已清空", healthy=True, temporary=True)
@@ -4613,7 +6070,13 @@ class ClipboardManagerApp(tk.Tk):
 
     def _ensure_default_startup(self) -> None:
         opt_out = self.store.get_setting("startup_opt_out", "0") == "1"
-        if getattr(sys, "frozen", False) and not opt_out and not self.startup_manager.is_enabled():
+        if opt_out:
+            return
+        if self.startup_manager.is_enabled():
+            with contextlib.suppress(Exception):
+                self.startup_manager.ensure_current_command()
+            return
+        if getattr(sys, "frozen", False):
             with contextlib.suppress(Exception):
                 self.startup_manager.set_enabled(True)
 
@@ -4657,7 +6120,7 @@ class ClipboardManagerApp(tk.Tk):
         self._close_zoomed_image()
         self._close_ocr_result_popup()
 
-        for after_id in (self.poll_after_id, self.queue_after_id, self.status_reset_after_id, self.preview_resize_after_id):
+        for after_id in (self.poll_after_id, self.queue_after_id, self.preview_resize_after_id):
             if after_id is not None:
                 with contextlib.suppress(Exception):
                     self.after_cancel(after_id)

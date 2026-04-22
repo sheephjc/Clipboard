@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import json
 from pathlib import Path
 import sqlite3
 
 from PIL import Image
 
-from shared.models import ClipboardCapture, ClipboardEntry
+from shared.models import ClipboardCapture, ClipboardEntry, IMAGE_ENTRY_TYPES
+from shared.rich_text import hash_image, json_dumps
 
 
 class ClipboardStore:
@@ -43,6 +45,7 @@ class ClipboardStore:
                 source_formats_json TEXT,
                 has_rich_text INTEGER DEFAULT 0,
                 image_path TEXT,
+                image_paths_json TEXT,
                 other_kind TEXT,
                 other_payload_json TEXT,
                 is_favorite INTEGER DEFAULT 0
@@ -69,6 +72,7 @@ class ClipboardStore:
             "source_formats_json": "TEXT",
             "has_rich_text": "INTEGER DEFAULT 0",
             "is_favorite": "INTEGER DEFAULT 0",
+            "image_paths_json": "TEXT",
         }
         for column_name, column_type in column_specs.items():
             if column_name not in columns:
@@ -91,6 +95,19 @@ class ClipboardStore:
             WHERE has_rich_text IS NULL OR has_rich_text = 0
             """
         )
+        rows = self.conn.execute(
+            """
+            SELECT id, image_path
+            FROM entries
+            WHERE image_path IS NOT NULL
+              AND COALESCE(image_paths_json, '') = ''
+            """
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                "UPDATE entries SET image_paths_json = ? WHERE id = ?",
+                (json_dumps([row["image_path"]]), row["id"]),
+            )
 
     def _row_to_entry(self, row: sqlite3.Row) -> ClipboardEntry:
         return ClipboardEntry(
@@ -105,6 +122,7 @@ class ClipboardStore:
             source_formats_json=row["source_formats_json"],
             has_rich_text=bool(row["has_rich_text"]),
             image_path=row["image_path"],
+            image_paths_json=row["image_paths_json"],
             other_kind=row["other_kind"],
             other_payload_json=row["other_payload_json"],
             is_favorite=bool(row["is_favorite"]) if "is_favorite" in row.keys() else False,
@@ -116,7 +134,7 @@ class ClipboardStore:
             SELECT id, type, summary, created_at, content_hash,
                    COALESCE(plain_text, text_content) AS plain_text,
                    html_content, rtf_content, source_formats_json, COALESCE(has_rich_text, 0) AS has_rich_text,
-                   image_path, other_kind, other_payload_json, COALESCE(is_favorite, 0) AS is_favorite
+                   image_path, image_paths_json, other_kind, other_payload_json, COALESCE(is_favorite, 0) AS is_favorite
             FROM entries
             ORDER BY id DESC
             LIMIT ?
@@ -136,17 +154,23 @@ class ClipboardStore:
     def add_capture(self, capture: ClipboardCapture) -> ClipboardEntry:
         created_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         image_path = None
-        if capture.type == "image" and capture.image is not None:
-            image_path = self._save_image(capture.image, capture.content_hash)
+        image_paths: list[str] = []
+        if capture.type in IMAGE_ENTRY_TYPES and (capture.image is not None or capture.images):
+            images = list(capture.images) or [capture.image]
+            for image in images:
+                image_paths.append(self._save_image(image, hash_image(image)))
+            if image_paths:
+                image_path = image_paths[0]
+        image_paths_json = json_dumps(image_paths) if image_paths else None
 
         cursor = self.conn.execute(
             """
             INSERT INTO entries (
                 type, summary, created_at, content_hash,
                 plain_text, text_content, html_content, rtf_content, source_formats_json, has_rich_text,
-                image_path, other_kind, other_payload_json, is_favorite
+                image_path, image_paths_json, other_kind, other_payload_json, is_favorite
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 capture.type,
@@ -160,6 +184,7 @@ class ClipboardStore:
                 capture.source_formats_json,
                 1 if capture.has_rich_text else 0,
                 image_path,
+                image_paths_json,
                 capture.other_kind,
                 capture.other_payload_json,
                 1 if capture.is_favorite else 0,
@@ -179,6 +204,7 @@ class ClipboardStore:
             source_formats_json=capture.source_formats_json,
             has_rich_text=capture.has_rich_text,
             image_path=image_path,
+            image_paths_json=image_paths_json,
             other_kind=capture.other_kind,
             other_payload_json=capture.other_payload_json,
             is_favorite=capture.is_favorite,
@@ -265,12 +291,17 @@ class ClipboardStore:
         self.cleanup_unused_images()
 
     def cleanup_unused_images(self) -> None:
-        used_paths = {
-            Path(row["image_path"])
-            for row in self.conn.execute(
-                "SELECT image_path FROM entries WHERE image_path IS NOT NULL"
-            ).fetchall()
-        }
+        used_paths: set[Path] = set()
+        for row in self.conn.execute(
+            "SELECT image_path, image_paths_json FROM entries WHERE image_path IS NOT NULL OR image_paths_json IS NOT NULL"
+        ).fetchall():
+            if row["image_path"]:
+                used_paths.add(Path(row["image_path"]))
+            if row["image_paths_json"]:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
+                    decoded = json.loads(row["image_paths_json"])
+                    if isinstance(decoded, list):
+                        used_paths.update(Path(path) for path in decoded if path)
         for path in self.image_dir.glob("*.png"):
             if path not in used_paths:
                 with contextlib.suppress(OSError):

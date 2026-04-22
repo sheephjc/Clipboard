@@ -1,4 +1,4 @@
-﻿# Clipboard 1.0.0
+﻿# Clipboard 2.0.1
 
 一个剪贴板历史小程序。当前 Windows 版已可用，macOS 版源码适配已开始准备。
 
@@ -53,9 +53,9 @@ pyinstaller clipboard_manager.spec
 
 打包完成后会生成：
 
-- `dist\\Clipboard 1.0.0\\Clipboard.exe`
+- `dist\\Clipboard 2.0.1\\Clipboard.exe`
 
-分发时请发送整个 `dist\\Clipboard 1.0.0` 文件夹，而不是只发单个 `Clipboard.exe`。
+分发时请发送整个 `dist\\Clipboard 2.0.1` 文件夹，而不是只发单个 `Clipboard.exe`。
 
 macOS：
 
@@ -71,9 +71,9 @@ pyinstaller clipboard_macos.spec
 
 下载文件不要提交进 Git 仓库。推荐流程：
 
-1. 打包 Windows 版，确认 `dist\\Clipboard 1.0.0` 里没有 `data\\`。
+1. 打包 Windows 版，确认 `dist\\Clipboard 2.0.1` 里没有 `data\\`。
 2. 生成 `release\\Clipboard-Windows.zip`，压缩内容只包含 `Clipboard.exe` 和 `_internal\\`。
-3. 在 GitHub Releases 创建新版本，例如 `v1.0.0`。
+3. 在 GitHub Releases 创建新版本，例如 `v2.0.1`。
 4. 上传 `Clipboard-Windows.zip` 作为 release asset。
 5. macOS 版完成后上传同名 `Clipboard-macOS.zip`，发布页按钮会沿用同一套链接规则。
 
