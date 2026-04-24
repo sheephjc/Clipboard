@@ -32,6 +32,9 @@ from urllib.parse import unquote, urlparse
 
 from PIL import Image, ImageTk
 
+from shared import ocr as shared_ocr
+from shared.store import ClipboardStore as SharedClipboardStore
+
 IS_WINDOWS = sys.platform.startswith("win")
 IS_MACOS = sys.platform == "darwin"
 OCR_SUPPORTED_PLATFORM = IS_WINDOWS or IS_MACOS
@@ -61,6 +64,7 @@ LEGACY_APP_NAME = "ClipboardTrayApp"
 LEGACY_APP_ID = "ClipboardTrayApp.Desktop"
 LEGACY_APP_DIR_NAME = "ClipboardTrayApp"
 STARTUP_ARG = "--startup"
+MENUBAR_HELPER_ARG = "--menubar-helper"
 MAX_HISTORY = 200
 POLL_INTERVAL_MS = 800
 QUEUE_POLL_MS = 120
@@ -69,6 +73,8 @@ WINDOW_WIDTH = 1700
 WINDOW_HEIGHT = 1200
 WINDOW_MIN_WIDTH = 1140
 WINDOW_MIN_HEIGHT = 900
+PREVIEW_PANE_MIN_WIDTH = 560
+ACTION_BUTTON_MIN_WIDTH = 126
 THUMBNAIL_MIN_SIZE = 180
 THUMBNAIL_MAX_SIZE = 300
 THUMBNAIL_PANEL_MIN_HEIGHT = 112
@@ -123,12 +129,14 @@ COLORS = {
     "danger": "#f06767",
 }
 
-FONT_UI = ("Microsoft YaHei UI", 11)
-FONT_TITLE = ("Microsoft YaHei UI", 18, "bold")
-FONT_SMALL = ("Microsoft YaHei UI", 10)
-FONT_TAG = ("Microsoft YaHei UI", 10, "bold")
-FONT_TEXT = ("Microsoft YaHei UI", 12)
-FONT_BUTTON = ("Microsoft YaHei UI", 11, "bold")
+UI_FONT_FAMILY = "PingFang SC" if IS_MACOS else "Microsoft YaHei UI"
+FONT_UI = (UI_FONT_FAMILY, 11)
+FONT_TITLE = (UI_FONT_FAMILY, 18, "bold")
+FONT_SMALL = (UI_FONT_FAMILY, 10)
+FONT_TAG = (UI_FONT_FAMILY, 10, "bold")
+FONT_TEXT = (UI_FONT_FAMILY, 12)
+FONT_BUTTON = (UI_FONT_FAMILY, 11, "bold")
+FONT_ACTION_BUTTON = (UI_FONT_FAMILY, 10, "bold")
 
 TYPE_LABELS = {
     "text": "文本",
@@ -402,6 +410,7 @@ class TrayMenuItem:
     callback: Callable[[], None]
     checked: bool = False
     enabled: bool = True
+    command_id: str | None = None
 
 
 class AutoHideScrollbar(tk.Canvas):
@@ -2825,6 +2834,20 @@ class PlatformServices:
     def enable_ui_features(self) -> None:
         return
 
+    def clipboard_change_count(self) -> int | None:
+        return None
+
+    def activate_app(self) -> None:
+        return
+
+    def open_path(self, path: Path) -> None:
+        if IS_WINDOWS:
+            os.startfile(str(path))
+        elif IS_MACOS:
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+
     def tray_icon_path(self) -> str | None:
         preferred_icon = icon_variant_ico_path(small_shell_icon_size())
         if preferred_icon.exists():
@@ -2963,6 +2986,7 @@ def create_platform_services() -> PlatformServices:
             return MacPlatformServices(
                 project_root=Path(__file__).resolve().parent,
                 startup_arg=STARTUP_ARG,
+                menubar_helper_arg=MENUBAR_HELPER_ARG,
             )
         except Exception as exc:
             print(f"[{APP_NAME}] Failed to initialize macOS services: {exc}", file=sys.stderr)
@@ -3007,7 +3031,7 @@ class ClipboardManagerApp(tk.Tk):
         self.pin_button: tk.Label | None = None
         self._configure_window_appearance()
 
-        self.store = ClipboardStore(self.platform_services.app_data_dir())
+        self.store = SharedClipboardStore(self.platform_services.app_data_dir(), max_history=MAX_HISTORY)
         self.startup_manager = self.platform_services.create_startup_manager()
 
         self.entries = self.store.load_entries()
@@ -3049,8 +3073,12 @@ class ClipboardManagerApp(tk.Tk):
         self.preview_text_scroll: AutoHideScrollbar | None = None
         self.preview_link_bar: tk.Frame | None = None
         self.preview_link_label: tk.Text | None = None
+        self.actions_row: tk.Frame | None = None
+        self.copy_button: tk.Button | None = None
         self.formula_button: tk.Button | None = None
         self.ocr_button: tk.Button | None = None
+        self.delete_button: tk.Button | None = None
+        self.actions_compact_mode: bool | None = None
         self.mixed_image_view: tk.Frame | None = None
         self.mixed_preview_label: tk.Label | None = None
         self.mixed_thumbnail_shell: tk.Frame | None = None
@@ -3073,6 +3101,8 @@ class ClipboardManagerApp(tk.Tk):
         self.bind("<Unmap>", self._on_window_unmap, add="+")
 
         self._build_ui()
+        self.bind("<Configure>", self._on_window_resize, add="+")
+        self._sync_action_buttons_layout()
         self._ensure_default_startup()
         self._refresh_pin_button()
         self._refresh_auto_delete_chip()
@@ -3244,7 +3274,6 @@ class ClipboardManagerApp(tk.Tk):
         header_row.pack(fill="both", expand=True, padx=18, pady=(16, 14))
 
         brand = tk.Frame(header_row, bg=COLORS["panel"])
-        brand.pack(side="left", fill="y")
 
         if self.header_icon_image is not None:
             tk.Label(brand, image=self.header_icon_image, bg=COLORS["panel"]).pack(side="left", padx=(0, 14))
@@ -3267,7 +3296,8 @@ class ClipboardManagerApp(tk.Tk):
         ).pack(anchor="w", pady=(4, 0))
 
         right_col = tk.Frame(header_row, bg=COLORS["panel"])
-        right_col.pack(side="right", anchor="n")
+        right_col.pack(side="right", anchor="ne")
+        brand.pack(side="left", fill="x", expand=True, anchor="nw", padx=(0, 14))
 
         header_controls = tk.Frame(right_col, bg=COLORS["panel"])
         header_controls.pack(anchor="e")
@@ -3574,14 +3604,18 @@ class ClipboardManagerApp(tk.Tk):
         self.listbox.configure(yscrollcommand=self.list_scrollbar.set)
 
         right = tk.Frame(body, bg=COLORS["bg"])
-        body.add(right, minsize=430)
+        body.add(right, minsize=PREVIEW_PANE_MIN_WIDTH if IS_WINDOWS else 430)
 
         actions = tk.Frame(right, bg=COLORS["bg"])
         actions.pack(side="bottom", fill="x", pady=(12, 0))
-        actions.grid_columnconfigure(0, weight=1)
-        actions.grid_columnconfigure(1, weight=0)
-        actions.grid_columnconfigure(2, weight=0)
-        actions.grid_columnconfigure(3, weight=0)
+        self.actions_row = actions
+        for column in range(4):
+            actions.grid_columnconfigure(
+                column,
+                minsize=ACTION_BUTTON_MIN_WIDTH,
+                weight=1,
+                uniform="actions",
+            )
 
         self.copy_button = tk.Button(
             actions,
@@ -3608,7 +3642,6 @@ class ClipboardManagerApp(tk.Tk):
             font=FONT_BUTTON,
             padx=16,
             pady=11,
-            width=12,
             command=self._copy_formula_selected,
             state="disabled",
         )
@@ -3624,7 +3657,6 @@ class ClipboardManagerApp(tk.Tk):
             font=FONT_BUTTON,
             padx=16,
             pady=11,
-            width=12,
             command=self._recognize_selected_image_text,
             state="disabled",
         )
@@ -3640,11 +3672,10 @@ class ClipboardManagerApp(tk.Tk):
             font=FONT_BUTTON,
             padx=18,
             pady=11,
-            width=10,
             command=self._delete_selected,
             state="disabled",
         )
-        self.delete_button.grid(row=0, column=3, sticky="ew", padx=(0, 8))
+        self.delete_button.grid(row=0, column=3, sticky="ew")
 
         self.preview_header_row = tk.Frame(right, bg=COLORS["bg"])
         self.preview_header_row.pack(side="top", fill="x", padx=0, pady=(0, 10))
@@ -3896,6 +3927,32 @@ class ClipboardManagerApp(tk.Tk):
             cursor="hand2" if has_query else "arrow",
         )
 
+    def _on_window_resize(self, _event=None) -> None:
+        self._sync_action_buttons_layout()
+
+    def _sync_action_buttons_layout(self) -> None:
+        if self.actions_row is None:
+            return
+
+        buttons = [self.copy_button, self.formula_button, self.ocr_button, self.delete_button]
+        if any(button is None for button in buttons):
+            return
+
+        actions_width = self.actions_row.winfo_width()
+        if actions_width <= 1:
+            return
+
+        compact_mode = actions_width < 700
+        if compact_mode == self.actions_compact_mode:
+            return
+        self.actions_compact_mode = compact_mode
+
+        button_font = FONT_ACTION_BUTTON if compact_mode else FONT_BUTTON
+        horizontal_padding = 12 if compact_mode else 16
+        vertical_padding = 9 if compact_mode else 11
+        for button in buttons:
+            button.config(font=button_font, padx=horizontal_padding, pady=vertical_padding)
+
     def _clear_search(self, _event=None) -> str:
         if self.search_var.get():
             self.search_var.set("")
@@ -3927,12 +3984,7 @@ class ClipboardManagerApp(tk.Tk):
         image_dir = self.store.image_dir
         image_dir.mkdir(parents=True, exist_ok=True)
         try:
-            if IS_WINDOWS:
-                os.startfile(str(image_dir))
-            elif IS_MACOS:
-                subprocess.Popen(["open", str(image_dir)])
-            else:
-                subprocess.Popen(["xdg-open", str(image_dir)])
+            self.platform_services.open_path(image_dir)
         except Exception as exc:
             messagebox.showerror("打开失败", f"没有成功打开图片存储位置。\n\n{image_dir}\n\n{exc}")
 
@@ -4708,7 +4760,7 @@ class ClipboardManagerApp(tk.Tk):
         recognized_text = ""
         error: Exception | None = None
         try:
-            recognized_text = recognize_image_text(image_path)
+            recognized_text = shared_ocr.recognize_image_text(image_path)
         except Exception as exc:
             error = exc
 
@@ -4735,7 +4787,7 @@ class ClipboardManagerApp(tk.Tk):
         self._queue_ui_action(finish)
 
     def _show_ocr_error(self, error: Exception) -> None:
-        if isinstance(error, OcrDependencyError):
+        if isinstance(error, shared_ocr.OcrDependencyError):
             message = (
                 "OCR 依赖未就绪。\n\n"
                 "请先安装：\n"
@@ -5118,7 +5170,10 @@ class ClipboardManagerApp(tk.Tk):
             entry.source_formats_json = text_source_formats_json(has_rich_text)
             if entry.type == "mixed":
                 source_formats = json.loads(entry.source_formats_json)
-                source_formats.append(format_clipboard_name(win32clipboard.CF_DIB))
+                if IS_WINDOWS and win32clipboard is not None:
+                    source_formats.append(format_clipboard_name(win32clipboard.CF_DIB))
+                else:
+                    source_formats.append("public.png")
                 entry.source_formats_json = json_dumps(source_formats)
             entry.has_rich_text = has_rich_text
             self.draft_payload_by_entry_id.pop(entry.id, None)
@@ -6020,6 +6075,7 @@ class ClipboardManagerApp(tk.Tk):
         if center or not self.window_has_been_presented:
             self._place_window_centered()
         self.deiconify()
+        self.platform_services.activate_app()
         self._apply_window_shell_icons()
         self.lift()
         self.attributes("-topmost", True)
@@ -6089,25 +6145,30 @@ class ClipboardManagerApp(tk.Tk):
             TrayMenuItem(
                 label="隐藏窗口" if self.is_window_visible else "显示窗口",
                 callback=lambda: self._queue_ui_action(self.toggle_window),
+                command_id="show_hide",
             ),
             TrayMenuItem(
                 label="窗口置顶",
                 callback=lambda: self._queue_ui_action(self._toggle_pinned),
                 checked=self.is_pinned,
+                command_id="toggle_pinned",
             ),
             TrayMenuItem(
                 label="开机自启",
                 callback=lambda: self._queue_ui_action(self._toggle_startup),
                 checked=startup_enabled,
+                command_id="toggle_startup",
             ),
             None,
             TrayMenuItem(
                 label="清空历史",
                 callback=lambda: self._queue_ui_action(self._clear_history),
+                command_id="clear_history",
             ),
             TrayMenuItem(
                 label="退出",
                 callback=lambda: self._queue_ui_action(self.request_exit),
+                command_id="quit",
             ),
         ]
 
@@ -6138,6 +6199,12 @@ class ClipboardManagerApp(tk.Tk):
 
 
 def main() -> None:
+    if IS_MACOS and MENUBAR_HELPER_ARG in sys.argv:
+        from platforms.macos.services import run_menubar_helper_from_argv
+
+        run_menubar_helper_from_argv(sys.argv[1:])
+        return
+
     platform_services = create_platform_services()
     launched_from_startup = is_startup_launch()
     instance_guard = None

@@ -1,13 +1,13 @@
 ﻿# Clipboard 2.0.1
 
-一个剪贴板历史小程序。当前 Windows 版已可用，macOS 版源码适配已开始准备。
+一个剪贴板历史小程序。当前 Windows 版已可用，macOS 版已重做平台适配，发布前仍需在真实 Mac 上验收。
 
 ## 工程结构
 
 - `clipboard_manager.py`：共享 Tk UI 和当前 Windows 入口
 - `shared\\`：跨平台数据模型、便携数据目录和富文本辅助代码
 - `platforms\\windows\\`：Windows 平台适配入口，当前复用已验证的 pywin32 实现
-- `platforms\\macos\\`：macOS 平台适配源码，基于 PyObjC/NSPasteboard，待 Mac 真机验证
+- `platforms\\macos\\`：macOS 平台适配源码，基于 PyObjC/NSPasteboard、LaunchAgent 和菜单栏 helper，待 Mac 真机验收
 - `assets\\`：图标资源
 
 ## 当前能力
@@ -31,7 +31,7 @@ python clipboard_manager.py
 
 程序启动后默认驻留托盘，左键托盘图标可显示或隐藏主窗口。
 
-macOS 源码准备：
+macOS 源码运行：
 
 ```bash
 python3 -m venv .venv
@@ -40,7 +40,7 @@ pip install -r requirements-macos.txt
 python clipboard_manager.py
 ```
 
-macOS 版需要在 Mac 上验证剪贴板、菜单栏和打包行为。
+macOS 版需要在 Mac 上验证剪贴板、菜单栏、开机自启和打包行为。
 
 ## PyInstaller 打包
 

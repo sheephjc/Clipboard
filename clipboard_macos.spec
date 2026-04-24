@@ -57,10 +57,15 @@ exe = EXE(
 app = BUNDLE(
     exe,
     name="Clipboard.app",
+    icon=str(assets_dir / "clipboard_icon.icns"),
     bundle_identifier="com.hjc.clipboard",
     info_plist={
         "CFBundleName": "Clipboard",
         "CFBundleDisplayName": "Clipboard",
+        "CFBundleIdentifier": "com.hjc.clipboard",
+        "CFBundleShortVersionString": "2.0.1",
+        "CFBundleVersion": "2.0.1",
         "NSHighResolutionCapable": "True",
+        "LSUIElement": False,
     },
 )

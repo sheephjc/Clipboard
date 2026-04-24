@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -224,15 +224,55 @@
     .product-shot {
       position: relative;
       padding: 10px;
-      border: 1px solid #324f7b;
+      border: 1px solid rgba(91, 128, 178, 0.74);
       border-radius: 8px;
-      background: linear-gradient(180deg, #10213a 0%, #172b47 100%);
-      box-shadow: 0 28px 60px var(--shadow);
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 30%),
+        linear-gradient(180deg, #10213a 0%, #172b47 100%);
+      box-shadow:
+        0 12px 22px rgba(8, 19, 34, 0.18),
+        0 34px 68px rgba(31, 41, 55, 0.2),
+        0 70px 110px rgba(31, 41, 55, 0.13);
       color: #dbe8ff;
+      transform: translateY(-4px);
+      isolation: isolate;
+    }
+
+    .product-shot::before,
+    .product-shot::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .product-shot::before {
+      z-index: -1;
+      left: 10%;
+      right: 10%;
+      bottom: -24px;
+      height: 32px;
+      border-radius: 999px;
+      background: rgba(31, 41, 55, 0.26);
+      filter: blur(18px);
+      transform: scaleX(1.05);
+    }
+
+    .product-shot::after {
+      z-index: 0;
+      inset: 0;
+      border-radius: inherit;
+      background:
+        linear-gradient(140deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 26%),
+        linear-gradient(270deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 34%);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 1px 0 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.18);
     }
 
     .shot-stage {
       position: relative;
+      z-index: 1;
       width: 100%;
       aspect-ratio: 1596 / 1148;
       border: 1px solid rgba(143, 166, 191, 0.42);
@@ -1131,6 +1171,18 @@
 
       .product-shot {
         padding: 8px;
+        box-shadow:
+          0 10px 18px rgba(8, 19, 34, 0.14),
+          0 24px 48px rgba(31, 41, 55, 0.18);
+        transform: translateY(-2px);
+      }
+
+      .product-shot::before {
+        left: 14%;
+        right: 14%;
+        bottom: -16px;
+        height: 24px;
+        opacity: 0.72;
       }
 
       .demo-header {
@@ -1584,7 +1636,7 @@
         selectedDate: "",
         autoDeletePeriod: "week",
         modal: { type: null },
-        statusText: "\u6f14\u793a\u5c31\u7eea\uff0c\u53ef\u70b9\u51fb\u622a\u56fe\u6309\u94ae\u4f53\u9a8c\u4ea4\u4e92\u3002"
+        statusText: "\u6f14\u793a\u5c31\u7eea\uff0c\u53ef\u70b9\u51fb\u6309\u94ae\u4f53\u9a8c\u4ea4\u4e92\u3002"
       };
 
       var hotspotMap = {};

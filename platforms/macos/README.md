@@ -1,18 +1,20 @@
 # macOS adapter notes
 
-This adapter is source-prepared from Windows and still needs validation on a real Mac.
+The macOS adapter is implemented around PyObjC `NSPasteboard` plus a small
+`rumps` menu-bar helper process. It is designed for macOS 12+ and still needs
+final acceptance on a real Mac before publishing a release asset.
 
-Expected v1 coverage:
+Current coverage:
 
-- text, HTML, RTF, image, and file-url clipboard reads
-- text, HTML, RTF, and PNG clipboard writes
+- text, HTML, RTF, screenshot image, image-file, multi-image, and file-url reads
+- text, HTML, RTF, single-image, multi-image, and mixed text/image writes
 - same-folder portable `data/`
-- best-effort menu bar entry through `rumps`
+- menu-bar commands through a helper subprocess and Unix socket
+- single-instance lock plus wake-up socket command
+- LaunchAgent startup registration
 
-Known follow-up work after first Mac run:
+Distribution notes:
 
-- verify `NSPasteboard` type constants across target macOS versions
-- decide whether startup registration should use LaunchAgent or a user-facing setting only
-- generate a proper `.icns` icon for `Clipboard.app`
-- sign/notarize the app if distributing beyond local use
-
+- `pyinstaller clipboard_macos.spec` must be run on macOS.
+- The generated `.app` is not signed or notarized.
+- Release zips must not include `data/`, `history.db`, or image cache files.
