@@ -3,10 +3,16 @@ __pycache__/
 .DS_Store
 
 .venv/
+.vscode/
 
 build/
+build_ocr/
 dist/
 data/
 release/
+
+*.zip
+*.exe
+*.pkg
 
 .codex_backups/

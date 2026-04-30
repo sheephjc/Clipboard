@@ -1,37 +1,53 @@
-﻿# Clipboard 2.0.2
+# Clipboard 2.0.2
 
-一个剪贴板历史小程序。当前 Windows 版已可用，macOS 版已重做平台适配，发布前仍需在真实 Mac 上验收。
+Clipboard 是一个轻量的剪贴板历史工具，用来找回、编辑和重新复制曾经复制过的内容。它默认在后台驻留托盘，适合写作、整理资料、处理图片和反复复制文本时使用。
 
-## 工程结构
+## 功能亮点
 
-- `clipboard_manager.py`：共享 Tk UI 和当前 Windows 入口
-- `shared\\`：跨平台数据模型、便携数据目录和富文本辅助代码
-- `platforms\\windows\\`：Windows 平台适配入口，当前复用已验证的 pywin32 实现
-- `platforms\\macos\\`：macOS 平台适配源码，基于 PyObjC/NSPasteboard、LaunchAgent 和菜单栏 helper，待 Mac 真机验收
-- `assets\\`：图标资源
+- 记录文本、富文本、图片、文件和文件夹路径。
+- 支持按 `全部 / 文本 / 图片 / 其他 / 收藏` 分类查看历史。
+- 文本记录可以编辑后重新复制，支持富文本复制和纯文本复制。
+- 图片记录可以预览、重新写回剪贴板，并支持 OCR 文字识别。
+- 支持搜索、收藏、日期筛选、自动清理和开机自启。
+- 关闭窗口后仍可驻留托盘，需要时再从托盘打开。
+- 历史数据默认保存在程序目录旁的 `data/` 文件夹，不上传到云端。
 
-## 当前能力
+## 下载与使用
 
-- 监听系统剪贴板，并按 `文本 / 图片 / 其他 / 收藏` 分类保存
-- 文本内容支持编辑、富文本复制与纯文本复制
-- 图片内容保存到本地并可重新写回系统剪贴板
-- 文件和文件夹复制会进入“其他”分类并展示路径列表
-- 默认以托盘程序运行，关闭窗口时隐藏到托盘而不是退出
-- 支持通过注册表实现当前用户开机自启
-- 自动将旧数据目录 `%APPDATA%\\Clipboard` / `%APPDATA%\\ClipboardTrayApp` 复制迁移到程序目录旁的 `data`
+Windows 版可以在 GitHub Releases 下载压缩包：
 
-## 开发运行
+```text
+Clipboard-Win-2.0.2.zip
+```
+
+下载后解压到常用位置，运行 `Clipboard.exe` 即可。首次运行会在程序目录旁生成 `data/` 文件夹，用来保存历史数据库和图片缓存。更新版本时，如果想保留历史记录，把旧版本旁边的 `data/` 文件夹放到新版同一目录旁即可。
+
+macOS 版源码已做平台适配，但仍需要在真实 Mac 上验收剪贴板、菜单栏、开机自启和打包行为。
+
+## 项目架构
+
+- `clipboard_manager.py`：主程序入口，包含 Tk 界面、托盘交互和应用层流程。
+- `shared/`：跨平台核心逻辑，包括数据模型、SQLite 存储、数据目录、富文本处理和 OCR 封装。
+- `platforms/windows/`：Windows 剪贴板、托盘和开机自启等平台服务。
+- `platforms/macos/`：macOS 平台适配代码，基于 NSPasteboard、LaunchAgent 和菜单栏能力。
+- `assets/`：应用图标资源。
+- `docs/`：GitHub Pages 发布页和示例截图资源。
+- `tests/`：核心存储和平台服务相关测试。
+
+整体上，UI 和应用流程在主入口里组织，跨平台可复用能力放在 `shared/`，系统剪贴板和自启等差异化能力放到 `platforms/` 下隔离。
+
+## 源码运行
 
 Windows：
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 python clipboard_manager.py
 ```
 
-程序启动后默认驻留托盘，左键托盘图标可显示或隐藏主窗口。
-
-macOS 源码运行：
+macOS：
 
 ```bash
 python3 -m venv .venv
@@ -40,48 +56,18 @@ pip install -r requirements-macos.txt
 python clipboard_manager.py
 ```
 
-macOS 版需要在 Mac 上验证剪贴板、菜单栏、开机自启和打包行为。
+## 打包
 
-## PyInstaller 打包
-
-Windows：
+Windows 使用 PyInstaller：
 
 ```powershell
-pip install pyinstaller
-pyinstaller clipboard_manager.spec
+.\.venv\Scripts\pyinstaller.exe --clean clipboard_manager.spec
 ```
 
-打包完成后会生成：
 
-- `dist\\Clipboard 2.0.2\\Clipboard.exe`
+## 数据与隐私
 
-分发时请发送整个 `dist\\Clipboard 2.0.2` 文件夹，而不是只发单个 `Clipboard.exe`。
-
-macOS：
-
-```bash
-pyinstaller clipboard_macos.spec
-```
-
-该命令需在 macOS 上执行，生成的 `.app` 还需要在 Mac 上做真实运行验收。
-
-## GitHub Pages 发布
-
-发布页放在 `docs\\index.html`，可在 GitHub 仓库的 Settings → Pages 中选择 `main / docs` 启用。
-
-下载文件不要提交进 Git 仓库。推荐流程：
-
-1. 打包 Windows 版，确认 `dist\\Clipboard 2.0.2` 里没有 `data\\`。
-2. 生成 `release\\Clipboard-Win-2.0.2.zip`，压缩内容只包含 `Clipboard.exe` 和 `_internal\\`。
-3. 在 GitHub Releases 创建新版本，例如 `v2.0.2`。
-4. 上传 `Clipboard-Win-2.0.2.zip` 作为 release asset。
-5. macOS 版完成后上传同名 `Clipboard-macOS.zip`，发布页按钮会沿用同一套链接规则。
-
-仓库里放源码和 `docs\\` 发布页；二进制 zip 放 GitHub Releases。`release\\`、`dist\\`、`build\\` 和 `data\\` 都会被 `.gitignore` 排除。
-
-## 数据目录
-
-- 数据库：程序目录旁的 `data\\history.db`
-- 图片缓存：程序目录旁的 `data\\images\\`
-- 首次运行新版时，会从旧目录 `%APPDATA%\\Clipboard` 或 `%APPDATA%\\ClipboardTrayApp` 复制迁移已有数据。
-- 发布压缩包不得包含 `data\\`、`history.db` 或 `images\\`。
+- 数据库：`data/history.db`
+- 图片缓存：`data/images/`
+- `data/` 位于程序目录旁，默认不会写入 C 盘固定位置。
+- `data/`、`dist/`、`release/`、虚拟环境和构建缓存都不会提交到仓库。
