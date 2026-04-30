@@ -1,5 +1,5 @@
 # Author: HJC by codex
-# Version: 2.0.1
+# Version: 2.0.2
 from __future__ import annotations
 
 import ctypes
@@ -55,7 +55,7 @@ else:
     win32gui = None
 
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 APP_NAME = "Clipboard"
 APP_ID = "Clipboard.Desktop"
 DISPLAY_NAME = "\u526a\u8d34\u677f"
@@ -94,6 +94,7 @@ IMAGE_FILE_EXTENSIONS = {
 GVML_CLIPBOARD_FORMAT_NAME = "Art::GVML ClipFormat"
 GVML_MEDIA_PREFIX = "clipboard/media/"
 AUTO_DELETE_SETTING_KEY = "auto_delete_policy"
+HISTORY_LIMIT_SETTING_KEY = "history_limit"
 AUTO_DELETE_CHECK_INTERVAL_SECONDS = 300
 OCR_BUTTON_TEXT = "识别文字"
 OCR_BUTTON_BUSY_TEXT = "识别中…"
@@ -110,23 +111,36 @@ AUTO_DELETE_POLICIES = {
     "week": {"label": "一周", "short_label": "周", "days": 7},
     "month": {"label": "一个月", "short_label": "月", "days": 30},
 }
+HISTORY_LIMIT_OPTIONS = {
+    "100": {"label": "100", "value": 100},
+    "200": {"label": "200", "value": 200},
+    "400": {"label": "400", "value": 400},
+    "unlimited": {"label": "\u65e0\u9650", "value": None},
+}
 
 COLORS = {
-    "bg": "#0f1720",
-    "panel": "#122033",
-    "panel_alt": "#18283f",
-    "card": "#1d314f",
-    "card_active": "#245183",
-    "border": "#294164",
-    "accent": "#f08b54",
-    "accent_soft": "#f3c9ac",
-    "text": "#e9eef5",
-    "text_dim": "#8fa6bf",
-    "text_text": "#dff3ea",
-    "text_image": "#f5d8c5",
-    "text_other": "#d6d1f6",
-    "success": "#4bc67a",
-    "danger": "#f06767",
+    "bg": "#f4f7fb",
+    "panel": "#ffffff",
+    "panel_alt": "#eef4fb",
+    "card": "#e7eef8",
+    "card_active": "#dbeafe",
+    "border": "#c8d6e6",
+    "accent": "#3b82f6",
+    "accent_soft": "#2563eb",
+    "accent_text": "#ffffff",
+    "text": "#1e2937",
+    "text_dim": "#64748b",
+    "text_text": "#166534",
+    "text_image": "#b45309",
+    "text_other": "#5b5bb7",
+    "success": "#2f9e62",
+    "success_text": "#ffffff",
+    "danger": "#d94b4b",
+    "disabled_text": "#94a3b8",
+    "scroll_thumb": "#b9c9db",
+    "scroll_thumb_active": "#7f9ab7",
+    "favorite": "#eab308",
+    "overlay": "#111827",
 }
 
 UI_FONT_FAMILY = "PingFang SC" if IS_MACOS else "Microsoft YaHei UI"
@@ -980,6 +994,25 @@ def auto_delete_policy_label(policy_key: str | None) -> str:
 
 def auto_delete_policy_short_label(policy_key: str | None) -> str:
     return str(AUTO_DELETE_POLICIES[normalized_auto_delete_policy(policy_key)]["short_label"])
+
+
+def normalized_history_limit_key(limit_key: str | None) -> str:
+    if limit_key is None:
+        return str(MAX_HISTORY)
+    normalized = str(limit_key).strip().lower()
+    if normalized in HISTORY_LIMIT_OPTIONS:
+        return normalized
+    if normalized in {"none", "null", "unlimited", "infinite"}:
+        return "unlimited"
+    return str(MAX_HISTORY)
+
+
+def history_limit_value(limit_key: str | None) -> int | None:
+    return HISTORY_LIMIT_OPTIONS[normalized_history_limit_key(limit_key)]["value"]
+
+
+def history_limit_label(limit_key: str | None) -> str:
+    return str(HISTORY_LIMIT_OPTIONS[normalized_history_limit_key(limit_key)]["label"])
 
 
 def build_clipboard_html(fragment_html: str) -> str:
@@ -2447,6 +2480,16 @@ class ClipboardStore:
         self.conn.commit()
         self.cleanup_unused_images()
 
+    def clear_history_entries(self) -> int:
+        cursor = self.conn.execute(
+            "DELETE FROM entries WHERE COALESCE(is_favorite, 0) = 0"
+        )
+        deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+        self.conn.commit()
+        if deleted_count:
+            self.cleanup_unused_images()
+        return max(deleted_count, 0)
+
     def delete_entries_older_than(self, cutoff_created_at: str) -> int:
         cursor = self.conn.execute(
             "DELETE FROM entries WHERE created_at < ? AND COALESCE(is_favorite, 0) = 0",
@@ -3032,6 +3075,7 @@ class ClipboardManagerApp(tk.Tk):
         self._configure_window_appearance()
 
         self.store = SharedClipboardStore(self.platform_services.app_data_dir(), max_history=MAX_HISTORY)
+        self._apply_history_limit_setting(prune=True)
         self.startup_manager = self.platform_services.create_startup_manager()
 
         self.entries = self.store.load_entries()
@@ -3560,6 +3604,12 @@ class ClipboardManagerApp(tk.Tk):
             text="\u6e05\u7a7a\u5386\u53f2",
             bg=COLORS["card"],
             fg=COLORS["accent"],
+            activebackground=COLORS["card"],
+            activeforeground=COLORS["accent"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             font=FONT_BUTTON,
@@ -3595,8 +3645,8 @@ class ClipboardManagerApp(tk.Tk):
         self.list_scrollbar = AutoHideScrollbar(
             list_shell,
             bg=COLORS["panel_alt"],
-            thumb_color="#4a6281",
-            thumb_active_color=COLORS["accent_soft"],
+            thumb_color=COLORS["scroll_thumb"],
+            thumb_active_color=COLORS["scroll_thumb_active"],
             command=self.listbox.yview,
         )
         self.list_scrollbar.pack(side="right", fill="y", pady=12)
@@ -3620,8 +3670,15 @@ class ClipboardManagerApp(tk.Tk):
         self.copy_button = tk.Button(
             actions,
             text="\u590d\u5236\u5230\u526a\u8d34\u677f",
-            bg=COLORS["accent"],
-            fg="#111111",
+            bg=COLORS["card"],
+            fg=COLORS["disabled_text"],
+            activebackground=COLORS["accent"],
+            activeforeground=COLORS["accent_text"],
+            disabledforeground=COLORS["disabled_text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             font=FONT_BUTTON,
@@ -3636,7 +3693,14 @@ class ClipboardManagerApp(tk.Tk):
             actions,
             text="\u590d\u5236\u7eaf\u6587\u672c",
             bg=COLORS["card"],
-            fg=COLORS["accent_soft"],
+            fg=COLORS["disabled_text"],
+            activebackground=COLORS["card"],
+            activeforeground=COLORS["accent"],
+            disabledforeground=COLORS["disabled_text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             font=FONT_BUTTON,
@@ -3651,7 +3715,14 @@ class ClipboardManagerApp(tk.Tk):
             actions,
             text=OCR_BUTTON_TEXT,
             bg=COLORS["card"],
-            fg=COLORS["accent_soft"],
+            fg=COLORS["disabled_text"],
+            activebackground=COLORS["card"],
+            activeforeground=COLORS["accent"],
+            disabledforeground=COLORS["disabled_text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             font=FONT_BUTTON,
@@ -3667,6 +3738,13 @@ class ClipboardManagerApp(tk.Tk):
             text="\u5220\u9664\u8bb0\u5f55",
             bg=COLORS["card"],
             fg=COLORS["danger"],
+            activebackground=COLORS["card"],
+            activeforeground=COLORS["danger"],
+            disabledforeground=COLORS["disabled_text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             font=FONT_BUTTON,
@@ -3735,7 +3813,7 @@ class ClipboardManagerApp(tk.Tk):
             fg=COLORS["accent_soft"],
             insertbackground=COLORS["accent_soft"],
             selectbackground=COLORS["accent"],
-            selectforeground=COLORS["bg"],
+            selectforeground=COLORS["accent_text"],
             relief="flat",
             bd=0,
             highlightthickness=0,
@@ -3784,8 +3862,8 @@ class ClipboardManagerApp(tk.Tk):
         self.preview_text_scroll = AutoHideScrollbar(
             self.preview_text_body,
             bg=COLORS["panel"],
-            thumb_color="#536b8a",
-            thumb_active_color=COLORS["accent_soft"],
+            thumb_color=COLORS["scroll_thumb"],
+            thumb_active_color=COLORS["scroll_thumb_active"],
             command=self.preview_text.yview,
         )
         self.preview_text_scroll.pack(side="right", fill="y", pady=10)
@@ -3825,6 +3903,12 @@ class ClipboardManagerApp(tk.Tk):
             text="重置",
             bg=COLORS["card"],
             fg=COLORS["text"],
+            activebackground=COLORS["card"],
+            activeforeground=COLORS["text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             padx=10,
@@ -3837,6 +3921,12 @@ class ClipboardManagerApp(tk.Tk):
             text="保存",
             bg=COLORS["card"],
             fg=COLORS["text"],
+            activebackground=COLORS["card"],
+            activeforeground=COLORS["text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             relief="flat",
             cursor="hand2",
             padx=10,
@@ -3882,8 +3972,8 @@ class ClipboardManagerApp(tk.Tk):
         self.mixed_thumbnail_scroll = AutoHideScrollbar(
             self.mixed_thumbnail_shell,
             bg=COLORS["panel"],
-            thumb_color="#4a6281",
-            thumb_active_color=COLORS["accent_soft"],
+            thumb_color=COLORS["scroll_thumb"],
+            thumb_active_color=COLORS["scroll_thumb_active"],
             command=self.mixed_thumbnail_canvas.xview,
             thickness=6,
             orient="horizontal",
@@ -4026,14 +4116,24 @@ class ClipboardManagerApp(tk.Tk):
             self.store.get_setting(AUTO_DELETE_SETTING_KEY, "off")
         )
 
+    def _get_history_limit_key(self) -> str:
+        return normalized_history_limit_key(
+            self.store.get_setting(HISTORY_LIMIT_SETTING_KEY, str(MAX_HISTORY))
+        )
+
+    def _apply_history_limit_setting(self, prune: bool = False) -> None:
+        self.store.max_history = history_limit_value(self._get_history_limit_key())
+        if prune:
+            self.store.prune_to_limit()
+
     def _refresh_auto_delete_chip(self) -> None:
         if self.auto_delete_chip is None:
             return
 
         policy = self._get_auto_delete_policy()
         enabled = auto_delete_policy_days(policy) is not None
-        dot_fg = COLORS["success"] if enabled else "#111111"
-        title_text = f"自动删除：{auto_delete_policy_short_label(policy)}"
+        dot_fg = COLORS["success"] if enabled else COLORS["text_dim"]
+        title_text = f"\u81ea\u52a8\u5220\u9664\uff1a{auto_delete_policy_short_label(policy)}"
         self.auto_delete_chip.config(bg=COLORS["panel_alt"], highlightbackground=COLORS["border"])
         self.auto_delete_chip_dot.config(bg=COLORS["panel_alt"], fg=dot_fg)
         self.auto_delete_chip_title.config(
@@ -4061,30 +4161,108 @@ class ClipboardManagerApp(tk.Tk):
         y_pos = self.auto_delete_chip.winfo_rooty() + self.auto_delete_chip.winfo_height() + 4
         popup.geometry(f"+{x_pos}+{y_pos}")
 
-        current_policy = self._get_auto_delete_policy()
-        for policy_key in ("off", "day", "week", "month"):
-            is_selected = policy_key == current_policy
-            if policy_key == "off":
-                button_padding = (8, 0)
-            elif policy_key == "month":
-                button_padding = (6, 8)
-            else:
-                button_padding = (6, 0)
-            button = tk.Button(
-                popup,
-                text=auto_delete_policy_label(policy_key),
-                bg=COLORS["accent"] if is_selected else COLORS["card"],
-                fg="#111111" if is_selected else COLORS["text"],
-                font=FONT_UI,
-                relief="flat",
-                cursor="hand2",
+        body = tk.Frame(popup, bg=COLORS["panel"], padx=10, pady=10)
+        body.pack(fill="both", expand=True)
+
+        draft = {
+            "policy": self._get_auto_delete_policy(),
+            "limit": self._get_history_limit_key(),
+        }
+        policy_buttons: dict[str, tk.Button] = {}
+        limit_buttons: dict[str, tk.Button] = {}
+
+        def refresh_buttons() -> None:
+            for key, button in policy_buttons.items():
+                is_selected = key == draft["policy"]
+                button.config(
+                    bg=COLORS["accent"] if is_selected else COLORS["card"],
+                    fg=COLORS["accent_text"] if is_selected else COLORS["text"],
+                )
+            for key, button in limit_buttons.items():
+                is_selected = key == draft["limit"]
+                button.config(
+                    bg=COLORS["accent"] if is_selected else COLORS["card"],
+                    fg=COLORS["accent_text"] if is_selected else COLORS["text"],
+                )
+
+        def select_policy(policy_key: str) -> None:
+            draft["policy"] = normalized_auto_delete_policy(policy_key)
+            refresh_buttons()
+
+        def select_limit(limit_key: str) -> None:
+            draft["limit"] = normalized_history_limit_key(limit_key)
+            refresh_buttons()
+
+        def build_column(parent: tk.Frame, title: str, rows: list[tuple[str, str]], kind: str) -> None:
+            tk.Label(
+                parent,
+                text=title,
+                bg=COLORS["panel"],
+                fg=COLORS["text_dim"],
+                font=FONT_SMALL,
                 anchor="w",
-                padx=14,
-                pady=10,
-                width=12,
-                command=lambda selected=policy_key: self._set_auto_delete_policy(selected),
-            )
-            button.pack(fill="x", padx=8, pady=button_padding)
+            ).pack(fill="x", padx=2, pady=(0, 6))
+            for key, label in rows:
+                command = (
+                    (lambda selected=key: select_policy(selected))
+                    if kind == "policy"
+                    else (lambda selected=key: select_limit(selected))
+                )
+                button = tk.Button(
+                    parent,
+                    text=label,
+                    bg=COLORS["card"],
+                    fg=COLORS["text"],
+                    font=FONT_UI,
+                    relief="flat",
+                    cursor="hand2",
+                    anchor="w",
+                    padx=14,
+                    pady=9,
+                    width=12,
+                    command=command,
+                )
+                button.pack(fill="x", pady=(0, 6))
+                if kind == "policy":
+                    policy_buttons[key] = button
+                else:
+                    limit_buttons[key] = button
+
+        columns = tk.Frame(body, bg=COLORS["panel"])
+        columns.pack(fill="x")
+
+        policy_col = tk.Frame(columns, bg=COLORS["panel"])
+        policy_col.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        limit_col = tk.Frame(columns, bg=COLORS["panel"])
+        limit_col.pack(side="left", fill="x", expand=True, padx=(8, 0))
+
+        build_column(
+            policy_col,
+            "\u5220\u9664\u5468\u671f",
+            [(key, auto_delete_policy_label(key)) for key in ("off", "day", "week", "month")],
+            "policy",
+        )
+        build_column(
+            limit_col,
+            "\u8bb0\u5f55\u4e0a\u9650",
+            [(key, history_limit_label(key)) for key in ("100", "200", "400", "unlimited")],
+            "limit",
+        )
+
+        apply_button = tk.Button(
+            body,
+            text="\u786e\u5b9a",
+            bg=COLORS["accent"],
+            fg=COLORS["accent_text"],
+            font=FONT_UI,
+            relief="flat",
+            cursor="hand2",
+            padx=14,
+            pady=9,
+            command=lambda: self._apply_auto_delete_settings(draft["policy"], draft["limit"]),
+        )
+        apply_button.pack(fill="x", pady=(4, 0))
+        refresh_buttons()
 
         popup.bind("<FocusOut>", lambda _event: self._close_auto_delete_popup())
         popup.bind("<Escape>", lambda _event: self._close_auto_delete_popup())
@@ -4095,20 +4273,30 @@ class ClipboardManagerApp(tk.Tk):
             self.auto_delete_popup.destroy()
         self.auto_delete_popup = None
 
-    def _set_auto_delete_policy(self, policy_key: str) -> None:
+    def _apply_auto_delete_settings(self, policy_key: str, history_limit_key: str) -> None:
         normalized_policy = normalized_auto_delete_policy(policy_key)
+        normalized_limit = normalized_history_limit_key(history_limit_key)
         self.store.set_setting(AUTO_DELETE_SETTING_KEY, normalized_policy)
+        self.store.set_setting(HISTORY_LIMIT_SETTING_KEY, normalized_limit)
+        self._apply_history_limit_setting(prune=True)
         self._refresh_auto_delete_chip()
         self._close_auto_delete_popup()
         deleted_count = self._apply_auto_delete_policy(force=True)
+        self.entries = self.store.load_entries()
+        if self.selected_entry_id is not None and self._find_entry_by_id(self.selected_entry_id) is None:
+            self.selected_entry_id = None
+        self._refresh_list()
         if deleted_count:
-            self._set_status(f"已自动清理 {deleted_count} 条历史", healthy=True, temporary=True)
+            message = f"\u5df2\u81ea\u52a8\u6e05\u7406 {deleted_count} \u6761\u5386\u53f2"
         else:
-            self._set_status(
-                f"自动删除已设为{auto_delete_policy_label(normalized_policy)}",
-                healthy=True,
-                temporary=True,
+            message = (
+                f"\u81ea\u52a8\u5220\u9664\uff1a{auto_delete_policy_label(normalized_policy)}"
+                f"\uff1b\u8bb0\u5f55\u4e0a\u9650\uff1a{history_limit_label(normalized_limit)}"
             )
+        self._set_status(message, healthy=True, temporary=True)
+
+    def _set_auto_delete_policy(self, policy_key: str) -> None:
+        self._apply_auto_delete_settings(policy_key, self._get_history_limit_key())
 
     def _apply_auto_delete_policy(self, force: bool = False) -> int:
         now_monotonic = time.monotonic()
@@ -4141,7 +4329,7 @@ class ClipboardManagerApp(tk.Tk):
         chip_bg = COLORS["panel_alt"]
         border = COLORS["border"]
         title_fg = COLORS["text"]
-        dot_fg = COLORS["success"] if enabled else "#111111"
+        dot_fg = COLORS["success"] if enabled else COLORS["text_dim"]
 
         self.startup_chip.config(bg=chip_bg, highlightbackground=border)
         self.startup_chip_dot.config(bg=chip_bg, fg=dot_fg)
@@ -4223,14 +4411,14 @@ class ClipboardManagerApp(tk.Tk):
             button.config(
                 text=labels[key],
                 bg=COLORS["accent"] if key == self.current_filter else COLORS["card"],
-                fg="#111111" if key == self.current_filter else TYPE_COLORS.get(key, COLORS["text"]),
+                fg=COLORS["accent_text"] if key == self.current_filter else TYPE_COLORS.get(key, COLORS["text"]),
             )
 
         if self.selected_date:
             self.date_filter_button.config(
                 text=f"{self.selected_date} \u25bc",
                 bg=COLORS["accent"],
-                fg="#111111",
+                fg=COLORS["accent_text"],
             )
         else:
             self.date_filter_button.config(
@@ -4289,7 +4477,7 @@ class ClipboardManagerApp(tk.Tk):
                         date_str = f"{y:04d}-{m:02d}-{day:02d}"
                         is_selected = self.selected_date == date_str
                         btn_bg = COLORS["accent"] if is_selected else COLORS["card"]
-                        btn_fg = "#111111" if is_selected else COLORS["text"]
+                        btn_fg = COLORS["accent_text"] if is_selected else COLORS["text"]
 
                         btn = tk.Button(
                             grid, text=str(day), bg=btn_bg, fg=btn_fg, font=FONT_SMALL, relief="flat", cursor="hand2",
@@ -4685,7 +4873,7 @@ class ClipboardManagerApp(tk.Tk):
         if self.formula_button is None:
             return
         if not entry_has_text(entry):
-            self.formula_button.config(state="disabled", bg=COLORS["card"], fg=COLORS["accent_soft"])
+            self.formula_button.config(state="disabled", bg=COLORS["card"], fg=COLORS["disabled_text"])
             return
         self.formula_button.config(state="normal", bg=COLORS["card"], fg=COLORS["accent"])
 
@@ -4714,7 +4902,7 @@ class ClipboardManagerApp(tk.Tk):
             state="normal" if enabled else "disabled",
             text=OCR_BUTTON_TEXT,
             bg=COLORS["card"],
-            fg=COLORS["accent"] if enabled else COLORS["accent_soft"],
+            fg=COLORS["accent"] if enabled else COLORS["disabled_text"],
         )
 
     def _recognize_selected_image_text(self) -> None:
@@ -4851,7 +5039,7 @@ class ClipboardManagerApp(tk.Tk):
             actions,
             text="复制识别文本",
             bg=COLORS["accent"],
-            fg="#111111",
+            fg=COLORS["accent_text"],
             relief="flat",
             cursor="hand2",
             font=FONT_BUTTON,
@@ -5593,13 +5781,13 @@ class ClipboardManagerApp(tk.Tk):
         overlay = tk.Toplevel(self)
         overlay.withdraw()
         overlay.overrideredirect(True)
-        overlay.configure(bg="#070c14")
+        overlay.configure(bg=COLORS["overlay"])
         overlay.geometry(f"{screen_width}x{screen_height}+0+0")
         overlay.attributes("-topmost", True)
         with contextlib.suppress(Exception):
             overlay.attributes("-alpha", 0.96)
 
-        dimmer = tk.Frame(overlay, bg="#070c14")
+        dimmer = tk.Frame(overlay, bg=COLORS["overlay"])
         dimmer.pack(fill="both", expand=True)
 
         image_shell = tk.Frame(
@@ -5704,7 +5892,12 @@ class ClipboardManagerApp(tk.Tk):
             self.preview_header.config(text="从左侧选择一条记录查看详情", fg=COLORS["text_dim"])
             if self.preview_header_favorite_btn is not None:
                 self.preview_header_favorite_btn.config(text="", fg=COLORS["text_dim"])
-            self.copy_button.config(state="disabled", text="复制到剪贴板", bg=COLORS["accent"])
+            self.copy_button.config(
+                state="disabled",
+                text="复制到剪贴板",
+                bg=COLORS["card"],
+                fg=COLORS["disabled_text"],
+            )
             self._sync_formula_button_for_entry(None)
             self._sync_ocr_button_for_entry(None)
             self.delete_button.config(state="disabled")
@@ -5732,7 +5925,12 @@ class ClipboardManagerApp(tk.Tk):
         self._update_favorite_icon(entry)
 
         if entry.type == "text":
-            self.copy_button.config(state="normal", text="复制到剪贴板", bg=COLORS["accent"])
+            self.copy_button.config(
+                state="normal",
+                text="复制到剪贴板",
+                bg=COLORS["accent"],
+                fg=COLORS["accent_text"],
+            )
             self._sync_formula_button_for_entry(entry)
             self._sync_ocr_button_for_entry(None)
             self._set_preview_text_actions(show_reset=True, show_save=True)
@@ -5746,7 +5944,12 @@ class ClipboardManagerApp(tk.Tk):
             self.selected_image_index_by_entry_id.pop(entry.id, None)
             image_paths = self._image_paths_for_entry(entry)
             can_copy = "normal" if image_paths else "disabled"
-            self.copy_button.config(state=can_copy, text="复制到剪贴板", bg=COLORS["accent"])
+            self.copy_button.config(
+                state=can_copy,
+                text="复制到剪贴板",
+                bg=COLORS["accent"] if can_copy == "normal" else COLORS["card"],
+                fg=COLORS["accent_text"] if can_copy == "normal" else COLORS["disabled_text"],
+            )
             self._sync_formula_button_for_entry(entry)
             self._set_preview_text_actions(show_reset=True, show_save=True)
             payload = self._effective_text_payload(entry)
@@ -5761,7 +5964,12 @@ class ClipboardManagerApp(tk.Tk):
             self.selected_image_index_by_entry_id.pop(entry.id, None)
             image_paths = self._image_paths_for_entry(entry)
             can_copy = "normal" if image_paths else "disabled"
-            self.copy_button.config(state=can_copy, text="复制到剪贴板", bg=COLORS["accent"])
+            self.copy_button.config(
+                state=can_copy,
+                text="复制到剪贴板",
+                bg=COLORS["accent"] if can_copy == "normal" else COLORS["card"],
+                fg=COLORS["accent_text"] if can_copy == "normal" else COLORS["disabled_text"],
+            )
             self._sync_formula_button_for_entry(None)
             self._set_preview_text_actions(show_reset=False, show_save=False)
             if len(image_paths) > 1:
@@ -5771,7 +5979,12 @@ class ClipboardManagerApp(tk.Tk):
                 self._sync_ocr_button_for_entry(entry)
             return
 
-        self.copy_button.config(state="disabled", text="复制到剪贴板", bg=COLORS["accent"])
+        self.copy_button.config(
+            state="disabled",
+            text="复制到剪贴板",
+            bg=COLORS["card"],
+            fg=COLORS["disabled_text"],
+        )
         self._sync_formula_button_for_entry(None)
         self._sync_ocr_button_for_entry(None)
         self._set_preview_link_hint([])
@@ -5905,13 +6118,20 @@ class ClipboardManagerApp(tk.Tk):
             self._set_preview_image(self._preview_image_path_for_entry(entry))
 
     def _flash_copy_button(self, text: str) -> None:
-        self.copy_button.config(text=text, bg=COLORS["success"])
-        self.after(1400, lambda: self.copy_button.config(text="复制到剪贴板", bg=COLORS["accent"]))
+        self.copy_button.config(text=text, bg=COLORS["success"], fg=COLORS["success_text"])
+        self.after(
+            1400,
+            lambda: self.copy_button.config(
+                text="复制到剪贴板",
+                bg=COLORS["accent"],
+                fg=COLORS["accent_text"],
+            ),
+        )
 
     def _flash_formula_button(self, text: str) -> None:
         if self.formula_button is None:
             return
-        self.formula_button.config(text=text, bg=COLORS["success"], fg="#111111")
+        self.formula_button.config(text=text, bg=COLORS["success"], fg=COLORS["success_text"])
 
         def restore_formula_button() -> None:
             if self.formula_button is None:
@@ -6012,13 +6232,20 @@ class ClipboardManagerApp(tk.Tk):
         
         entry.is_favorite = not getattr(entry, 'is_favorite', False)
         self.store.update_favorite(entry.id, entry.is_favorite)
-        self._update_favorite_icon(entry)
+        if not entry.is_favorite:
+            self.store.prune_to_limit()
+        self.entries = self.store.load_entries()
+        selected_entry = self._find_entry_by_id(entry.id)
+        if selected_entry is None:
+            self.selected_entry_id = None
+        else:
+            self._update_favorite_icon(selected_entry)
         self._refresh_list()
         self._set_status("已收藏" if entry.is_favorite else "已取消收藏", healthy=True, temporary=True)
         
     def _update_favorite_icon(self, entry):
         star_text = "★" if getattr(entry, "is_favorite", False) else "☆"
-        star_fg = "#FFD700" if getattr(entry, "is_favorite", False) else COLORS["text"]
+        star_fg = COLORS["favorite"] if getattr(entry, "is_favorite", False) else COLORS["text"]
         if self.preview_header_favorite_btn is not None:
             self.preview_header_favorite_btn.config(text=star_text, fg=star_fg)
 
@@ -6046,18 +6273,22 @@ class ClipboardManagerApp(tk.Tk):
             self.listbox.event_generate("<<ListboxSelect>>")
 
     def _clear_history(self) -> None:
-        if not messagebox.askyesno("清空历史", "确认清空所有已保存的剪贴板记录吗？"):
+        if not messagebox.askyesno("清空历史", "确认清空所有未收藏的剪贴板记录吗？\n\n收藏记录会保留。"):
             return
 
-        self.store.clear_entries()
-        self.entries = []
-        self.draft_payload_by_entry_id.clear()
-        self.preview_history_by_entry_id.clear()
-        self.preview_history_index_by_entry_id.clear()
-        self.selected_image_index_by_entry_id.clear()
-        self.selected_entry_id = None
+        removed_ids = {entry.id for entry in self.entries if not entry.is_favorite}
+        deleted_count = self.store.clear_history_entries()
+        self.entries = self.store.load_entries()
+        for entry_id in removed_ids:
+            self.draft_payload_by_entry_id.pop(entry_id, None)
+            self.preview_history_by_entry_id.pop(entry_id, None)
+            self.preview_history_index_by_entry_id.pop(entry_id, None)
+            self.selected_image_index_by_entry_id.pop(entry_id, None)
+        if self.selected_entry_id in removed_ids:
+            self.selected_entry_id = None
         self._refresh_list()
-        self._set_status("历史已清空", healthy=True, temporary=True)
+        status_text = "已清空未收藏历史，收藏已保留" if deleted_count else "没有可清空的未收藏历史"
+        self._set_status(status_text, healthy=True, temporary=True)
 
     def _place_window_centered(self) -> None:
         self.update_idletasks()

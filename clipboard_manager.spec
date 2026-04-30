@@ -55,5 +55,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    name="Clipboard 2.0.1",
+    name="Clipboard 2.0.2",
 )

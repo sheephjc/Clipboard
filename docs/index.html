@@ -11,28 +11,38 @@
   <style>
     :root {
       color-scheme: light;
-      --ink: #1f2937;
-      --muted: #5b6472;
-      --paper: #f7f8fb;
+      --ink: #122033;
+      --muted: #5f7188;
+      --paper: #f3faf9;
       --surface: #ffffff;
-      --line: #d9dee7;
-      --mint: #0f9f8f;
-      --mint-dark: #087668;
-      --coral: #e56b4f;
-      --yellow: #f2c94c;
-      --blue: #2f80ed;
-      --shadow: rgba(31, 41, 55, 0.13);
+      --surface-soft: #f8fcfb;
+      --line: #d5e3ec;
+      --line-strong: #b8d0dc;
+      --mint: #48bfa8;
+      --mint-dark: #238a7b;
+      --mint-soft: #e8f7f2;
+      --coral: #e27a55;
+      --yellow: #e8b90f;
+      --blue: #3b82f6;
+      --blue-soft: #eaf3ff;
+      --shadow: rgba(28, 66, 82, 0.12);
+      --shadow-soft: rgba(58, 137, 156, 0.08);
     }
 
     * {
       box-sizing: border-box;
     }
 
+    html {
+      scroll-padding-top: 88px;
+    }
+
     body {
       margin: 0;
       min-width: 320px;
       color: var(--ink);
-      background: var(--paper);
+      background:
+        linear-gradient(180deg, #fbfefe 0%, var(--paper) 48%, #f7fbfd 100%);
       font-family: "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
       line-height: 1.6;
       letter-spacing: 0;
@@ -47,14 +57,34 @@
     }
 
     .top {
-      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: rgba(252, 255, 254, 0.94);
       border-bottom: 1px solid var(--line);
+      transition:
+        background 180ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease;
+    }
+
+    .top.is-scrolled {
+      background: rgba(248, 253, 252, 0.78);
+      border-bottom-color: rgba(184, 208, 220, 0.62);
+      box-shadow: 0 16px 38px rgba(18, 32, 51, 0.08);
+    }
+
+    @supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+      .top.is-scrolled {
+        -webkit-backdrop-filter: blur(18px) saturate(160%);
+        backdrop-filter: blur(18px) saturate(160%);
+      }
     }
 
     .nav {
-      width: min(1120px, calc(100% - 36px));
+      width: min(1160px, calc(100% - 36px));
       margin: 0 auto;
-      min-height: 72px;
+      min-height: 70px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -68,6 +98,7 @@
       font-weight: 800;
       font-size: 20px;
       text-decoration: none;
+      color: #10243a;
     }
 
     .brand img {
@@ -78,7 +109,7 @@
 
     .nav-links {
       display: flex;
-      gap: 18px;
+      gap: 20px;
       align-items: center;
       font-size: 14px;
       color: var(--muted);
@@ -87,23 +118,28 @@
 
     .nav-links a {
       text-decoration: none;
+      transition: color 150ms ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--mint-dark);
     }
 
     .hero {
-      width: min(1120px, calc(100% - 36px));
+      width: min(1160px, calc(100% - 36px));
       margin: 0 auto;
-      min-height: calc(100vh - 72px);
+      min-height: min(700px, calc(100vh - 170px));
       display: grid;
-      grid-template-columns: minmax(380px, 1.16fr) minmax(300px, 0.84fr);
+      grid-template-columns: minmax(540px, 1.12fr) minmax(320px, 0.88fr);
       align-items: center;
-      gap: 40px;
-      padding: 56px 0 64px;
+      gap: 44px;
+      padding: 40px 0 34px;
       position: relative;
     }
 
     .app-meta {
       position: absolute;
-      top: 14px;
+      top: 10px;
       right: 2px;
       display: flex;
       flex-direction: column;
@@ -112,7 +148,7 @@
     }
 
     .app-meta .version {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       color: var(--ink);
     }
@@ -124,13 +160,16 @@
 
     .hero-copy {
       order: 2;
-      max-width: 100%;
-      margin-top: -10px;
+      max-width: 540px;
+      min-width: 0;
+      margin-top: 0;
+      padding-top: 18px;
     }
 
     .hero-visual {
       order: 1;
       width: 100%;
+      min-width: 0;
       justify-self: start;
       align-self: center;
     }
@@ -140,28 +179,36 @@
       align-items: center;
       min-height: 32px;
       padding: 4px 10px;
-      border: 1px solid rgba(15, 159, 143, 0.26);
+      border: 1px solid rgba(72, 191, 168, 0.32);
       border-radius: 8px;
       color: var(--mint-dark);
-      background: rgba(15, 159, 143, 0.08);
+      background: var(--mint-soft);
       font-size: 14px;
       font-weight: 700;
     }
 
     h1 {
-      margin: 0 0 18px;
+      margin: 0 0 20px;
       max-width: none;
-      font-size: clamp(38px, 4.4vw, 50px);
-      line-height: 1.08;
+      color: #10243a;
+      font-size: clamp(38px, 4.2vw, 52px);
+      line-height: 1.06;
       letter-spacing: 0;
       white-space: nowrap;
+      overflow-wrap: anywhere;
     }
 
     .lead {
-      max-width: 670px;
-      margin: 0 0 28px;
+      max-width: 530px;
+      margin: 0 0 14px;
       color: var(--muted);
-      font-size: 20px;
+      font-size: 19px;
+      line-height: 1.62;
+      overflow-wrap: anywhere;
+    }
+
+    .hero-copy .lead:last-of-type {
+      margin-bottom: 26px;
     }
 
     .actions {
@@ -177,12 +224,12 @@
       align-items: center;
       justify-content: center;
       min-height: 48px;
-      padding: 12px 18px;
+      padding: 12px 20px;
       border-radius: 8px;
       border: 1px solid transparent;
       text-decoration: none;
       font-weight: 800;
-      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, border-color 150ms ease;
     }
 
     .button:hover {
@@ -191,24 +238,30 @@
     }
 
     .button.primary {
-      background: var(--mint);
+      background: linear-gradient(180deg, #55c9b2 0%, var(--mint) 100%);
       color: #ffffff;
+      box-shadow: 0 12px 24px rgba(72, 191, 168, 0.18);
     }
 
     .button.primary:hover {
-      background: var(--mint-dark);
+      background: linear-gradient(180deg, #3fb9a2 0%, var(--mint-dark) 100%);
     }
 
     .button.secondary {
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.82);
       color: var(--ink);
       border-color: var(--line);
     }
 
+    .button.secondary:hover {
+      border-color: var(--line-strong);
+      background: #ffffff;
+    }
+
     .button.disabled {
-      color: #6b7280;
-      background: #eef1f5;
-      border-color: #e2e6ee;
+      color: #7b8ba0;
+      background: #edf4f6;
+      border-color: #dce9ee;
       cursor: not-allowed;
       box-shadow: none;
       transform: none;
@@ -223,18 +276,19 @@
 
     .product-shot {
       position: relative;
-      padding: 10px;
-      border: 1px solid rgba(91, 128, 178, 0.74);
+      padding: 9px;
+      border: 1px solid var(--line-strong);
       border-radius: 8px;
       background:
-        linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 30%),
-        linear-gradient(180deg, #10213a 0%, #172b47 100%);
+        linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(236, 249, 245, 0.74) 46%),
+        linear-gradient(180deg, #fbfefe 0%, #edf7fb 100%);
       box-shadow:
-        0 12px 22px rgba(8, 19, 34, 0.18),
-        0 34px 68px rgba(31, 41, 55, 0.2),
-        0 70px 110px rgba(31, 41, 55, 0.13);
-      color: #dbe8ff;
-      transform: translateY(-4px);
+        0 12px 22px var(--shadow-soft),
+        0 32px 66px rgba(18, 32, 51, 0.11),
+        0 68px 108px rgba(35, 138, 123, 0.08);
+      color: #0f2138;
+      max-width: 100%;
+      transform: translateY(-2px);
       isolation: isolate;
     }
 
@@ -252,8 +306,8 @@
       bottom: -24px;
       height: 32px;
       border-radius: 999px;
-      background: rgba(31, 41, 55, 0.26);
-      filter: blur(18px);
+      background: rgba(72, 191, 168, 0.18);
+      filter: blur(17px);
       transform: scaleX(1.05);
     }
 
@@ -262,23 +316,24 @@
       inset: 0;
       border-radius: inherit;
       background:
-        linear-gradient(140deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 26%),
-        linear-gradient(270deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 34%);
+        linear-gradient(140deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0) 30%),
+        linear-gradient(270deg, rgba(72, 191, 168, 0.08), rgba(255, 255, 255, 0) 36%);
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.22),
-        inset 1px 0 0 rgba(255, 255, 255, 0.1),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+        inset 0 1px 0 rgba(255, 255, 255, 0.86),
+        inset 1px 0 0 rgba(255, 255, 255, 0.68),
+        inset 0 -1px 0 rgba(126, 151, 168, 0.18);
     }
 
     .shot-stage {
       position: relative;
       z-index: 1;
       width: 100%;
-      aspect-ratio: 1596 / 1148;
-      border: 1px solid rgba(143, 166, 191, 0.42);
+      max-width: 100%;
+      aspect-ratio: 1698 / 1197;
+      border: 1px solid #c9ddea;
       border-radius: 8px;
       overflow: hidden;
-      background: #0a1628;
+      background: #f6fafc;
     }
 
     .shot-image {
@@ -318,14 +373,14 @@
     .shot-date-native-anchor {
       position: absolute;
       z-index: 0;
-      left: 37.47%;
-      top: 19.6%;
-      width: 8.77%;
-      height: 4.53%;
+      left: 35.22%;
+      top: 19.21%;
+      width: 8.07%;
+      height: 4.34%;
       opacity: 0;
       pointer-events: none;
       color-scheme: light;
-      accent-color: #2f80ed;
+      accent-color: #3b82f6;
       background: #ffffff;
       border: 1px solid #ffffff;
       color: #111111;
@@ -336,12 +391,12 @@
       z-index: 5;
       min-width: 200px;
       max-width: min(84vw, 320px);
-      border: 1px solid rgba(122, 154, 194, 0.56);
+      border: 1px solid var(--line-strong);
       border-radius: 8px;
-      background: rgba(11, 30, 55, 0.98);
-      box-shadow: 0 18px 42px rgba(9, 17, 31, 0.55);
+      background: rgba(252, 255, 254, 0.98);
+      box-shadow: 0 18px 42px rgba(18, 32, 51, 0.16);
       padding: 10px;
-      color: #eef5ff;
+      color: #0f2138;
       display: grid;
       gap: 10px;
     }
@@ -364,7 +419,7 @@
 
     .shot-popover label {
       font-size: 12px;
-      color: #c9d9f3;
+      color: #53627a;
       line-height: 1.2;
     }
 
@@ -372,16 +427,16 @@
     .shot-popover input {
       width: 100%;
       min-height: 32px;
-      border: 1px solid #345d8f;
+      border: 1px solid var(--line);
       border-radius: 6px;
-      background: #15345a;
-      color: #f6fbff;
+      background: #f7fbfc;
+      color: #0f2138;
       padding: 0 8px;
       font-family: inherit;
       font-size: 13px;
       letter-spacing: 0;
-      color-scheme: dark;
-      accent-color: #40c66b;
+      color-scheme: light;
+      accent-color: #3b82f6;
     }
 
     .shot-popover-actions {
@@ -392,10 +447,10 @@
 
     .shot-btn {
       min-height: 32px;
-      border: 1px solid rgba(122, 154, 194, 0.6);
+      border: 1px solid var(--line);
       border-radius: 6px;
-      background: #1f456f;
-      color: #ecf3ff;
+      background: var(--blue-soft);
+      color: #0f2138;
       padding: 0 10px;
       font-size: 12px;
       font-weight: 700;
@@ -410,16 +465,16 @@
     }
 
     .shot-btn.primary {
-      background: #e58752;
-      border-color: rgba(255, 205, 171, 0.82);
-      color: #142744;
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #ffffff;
     }
 
     .shot-overlay {
       position: absolute;
       inset: 0;
       z-index: 7;
-      background: rgba(2, 10, 20, 0.6);
+      background: rgba(18, 32, 51, 0.26);
       display: grid;
       place-items: center;
       padding: 12px;
@@ -431,10 +486,10 @@
 
     .shot-dialog {
       width: min(420px, calc(100% - 10px));
-      border: 1px solid rgba(122, 154, 194, 0.62);
+      border: 1px solid var(--line-strong);
       border-radius: 8px;
-      background: rgba(10, 28, 49, 0.98);
-      box-shadow: 0 20px 44px rgba(4, 12, 24, 0.6);
+      background: rgba(252, 255, 254, 0.98);
+      box-shadow: 0 20px 44px rgba(18, 32, 51, 0.2);
       display: grid;
       gap: 10px;
       padding: 12px;
@@ -444,17 +499,17 @@
       margin: 0;
       font-size: 16px;
       font-weight: 800;
-      color: #f2f8ff;
+      color: #0f2138;
       line-height: 1.2;
     }
 
     .shot-dialog-content {
       margin: 0;
-      border: 1px solid rgba(122, 154, 194, 0.45);
+      border: 1px solid var(--line);
       border-radius: 6px;
-      background: #132d4f;
+      background: #f7fbfc;
       padding: 10px;
-      color: #f2f8ff;
+      color: #0f2138;
       font-family: "Segoe UI", "Microsoft YaHei UI", Arial, sans-serif;
       font-size: 13px;
       line-height: 1.45;
@@ -473,11 +528,11 @@
 
     .shot-status {
       margin-top: 10px;
-      min-height: 34px;
-      border: 1px solid rgba(137, 161, 194, 0.36);
+      min-height: 32px;
+      border: 1px solid var(--line);
       border-radius: 6px;
-      background: #132947;
-      color: #c8d8ef;
+      background: rgba(247, 251, 252, 0.9);
+      color: #53627a;
       display: flex;
       align-items: center;
       padding: 6px 10px;
@@ -991,39 +1046,40 @@
     }
 
     .screenshot-note {
-      margin: 10px 0 0;
+      margin: 6px 0 0;
       color: var(--muted);
-      font-size: 17px;
-      line-height: 1.45;
+      font-size: 16px;
+      line-height: 1.55;
     }
 
     .product-shot + .screenshot-note {
-      margin-top: 44px;
+      margin-top: 48px;
     }
 
     section {
       border-top: 1px solid var(--line);
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.76);
     }
 
     section.bg-paper {
-      background: var(--paper);
+      background: rgba(243, 250, 249, 0.72);
     }
 
     .section-inner {
-      width: min(1120px, calc(100% - 36px));
+      width: min(1160px, calc(100% - 36px));
       margin: 0 auto;
-      padding: 72px 0;
+      padding: 48px 0 56px;
     }
 
     .section-heading {
       max-width: 740px;
-      margin-bottom: 28px;
+      margin-bottom: 26px;
     }
 
     h2 {
       margin: 0 0 12px;
-      font-size: 34px;
+      color: #10243a;
+      font-size: 33px;
       line-height: 1.18;
       letter-spacing: 0;
     }
@@ -1039,44 +1095,47 @@
     .features {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
+      gap: 12px;
     }
 
     .feature,
     .step,
     .download-box,
     .privacy {
-      border: 1px solid var(--line);
+      border: 1px solid rgba(184, 208, 220, 0.76);
       border-radius: 8px;
-      background: #ffffff;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72) inset;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
 
     .feature:hover,
     .step:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 12px 24px var(--shadow);
+      transform: translateY(-2px);
+      border-color: var(--line-strong);
+      box-shadow: 0 14px 28px var(--shadow);
     }
 
     .feature {
-      padding: 18px;
-      min-height: 164px;
+      padding: 18px 18px 20px;
+      min-height: 150px;
     }
 
     .feature strong {
       display: block;
       margin-bottom: 8px;
+      color: #15304a;
       font-size: 17px;
     }
 
     .steps {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
+      gap: 12px;
     }
 
     .step {
-      padding: 18px;
+      padding: 18px 18px 20px;
     }
 
     .step-number {
@@ -1087,9 +1146,10 @@
       justify-content: center;
       margin-bottom: 12px;
       border-radius: 8px;
-      background: var(--mint);
+      background: linear-gradient(180deg, #60ccb7 0%, var(--mint) 100%);
       color: #ffffff;
       font-weight: 800;
+      box-shadow: 0 8px 18px rgba(72, 191, 168, 0.18);
     }
 
     .download-grid {
@@ -1117,15 +1177,17 @@
     }
 
     .privacy {
-      padding: 22px;
+      padding: 24px;
       display: grid;
       gap: 8px;
+      background:
+        linear-gradient(90deg, rgba(232, 247, 242, 0.9) 0%, rgba(255, 255, 255, 0.82) 42%, rgba(255, 255, 255, 0.78) 100%);
     }
 
     footer {
-      width: min(1120px, calc(100% - 36px));
+      width: min(1160px, calc(100% - 36px));
       margin: 0 auto;
-      padding: 40px 0;
+      padding: 36px 0;
       color: var(--muted);
       font-size: 14px;
       text-align: center;
@@ -1133,10 +1195,15 @@
     }
 
     @media (max-width: 860px) {
+      html {
+        scroll-padding-top: 126px;
+      }
+
       .nav {
         align-items: flex-start;
         flex-direction: column;
-        padding: 16px 0;
+        gap: 12px;
+        padding: 14px 0;
       }
 
       .nav-links {
@@ -1147,7 +1214,8 @@
       .hero {
         min-height: auto;
         grid-template-columns: 1fr;
-        padding: 42px 0 56px;
+        gap: 28px;
+        padding: 34px 0 48px;
       }
 
       .hero-copy,
@@ -1163,6 +1231,8 @@
 
       .hero-copy {
         margin-top: 0;
+        max-width: 680px;
+        padding-top: 0;
       }
 
       .hero-visual {
@@ -1172,9 +1242,9 @@
       .product-shot {
         padding: 8px;
         box-shadow:
-          0 10px 18px rgba(8, 19, 34, 0.14),
-          0 24px 48px rgba(31, 41, 55, 0.18);
-        transform: translateY(-2px);
+          0 10px 18px var(--shadow-soft),
+          0 24px 48px rgba(18, 32, 51, 0.11);
+        transform: none;
       }
 
       .product-shot::before {
@@ -1223,7 +1293,7 @@
       }
 
       h1 {
-        font-size: 44px;
+        font-size: 42px;
         white-space: normal;
       }
 
@@ -1231,10 +1301,15 @@
         font-size: 18px;
       }
 
+      .section-inner {
+        padding: 48px 0;
+      }
+
       .features,
       .steps,
       .download-grid {
         grid-template-columns: 1fr;
+        gap: 12px;
       }
     }
 
@@ -1243,23 +1318,65 @@
       .hero,
       .section-inner,
       footer {
-        width: min(100% - 24px, 1120px);
+        width: min(100% - 24px, 1160px);
+      }
+
+      .nav {
+        gap: 10px;
+      }
+
+      .brand {
+        font-size: 19px;
+      }
+
+      .brand img {
+        width: 34px;
+        height: 34px;
+      }
+
+      .nav-links {
+        gap: 12px;
+        font-size: 13px;
+      }
+
+      .hero {
+        padding: 28px 0 42px;
       }
 
       h1 {
-        font-size: 38px;
+        font-size: 34px;
       }
 
       h2 {
-        font-size: 28px;
+        font-size: 27px;
+      }
+
+      .lead {
+        font-size: 16px;
+      }
+
+      .hero-copy .lead:last-of-type {
+        margin-bottom: 22px;
+      }
+
+      .section-inner {
+        padding: 42px 0;
+      }
+
+      .feature,
+      .step,
+      .privacy {
+        padding: 16px;
       }
 
       .actions {
         align-items: stretch;
+        gap: 10px;
       }
 
       .button {
         width: 100%;
+        min-height: 46px;
       }
 
       .demo-tabs {
@@ -1314,7 +1431,7 @@
           <a href="#features">功能</a>
           <a href="#download">步骤</a>
           <a href="#privacy">隐私</a>
-          <a id="release-link" href="#">GitHub Releases</a>
+          <a id="release-link" href="#">GitHub</a>
         </div>
       </nav>
     </header>
@@ -1322,12 +1439,13 @@
     <main id="top">
       <div class="hero">
         <div class="app-meta">
-          <div class="version">Version: 2.0.1</div>
+          <div class="version">Version: 2.0.2</div>
           <div class="author">Author: HJC by codex</div>
         </div>
         <div class="hero-copy">
           <h1>查询剪贴板历史内容。</h1>
-          <p class="lead">Clipboard 会记录一切复制的内容。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。</p>
+          <p class="lead">Clipboard 会记录一切复制的内容。
+            复制过的内容可以快速找回、编辑、收藏。</p>
           <p class="lead">图片支持文字识别功能。</p>
           <p class="lead">左侧示例图展示 Clipboard 的部分功能，并支持交互。</p>
           <div class="actions" id="download-actions">
@@ -1339,7 +1457,7 @@
         <div class="hero-visual">
           <div class="product-shot" aria-label="Clipboard 交互演示">
             <div class="shot-stage" id="shot-stage">
-              <img class="shot-image" id="shot-image" src="assets/clipboard_wenji.png" alt="Clipboard screenshot demo">
+              <img class="shot-image" id="shot-image" src="assets/tupian.png" alt="Clipboard screenshot demo">
               <input id="shot-date-input" class="shot-date-native-anchor" type="date" tabindex="-1" aria-hidden="true">
               <div class="shot-hotspot-layer" id="shot-hotspot-layer"></div>
 
@@ -1438,7 +1556,7 @@
 
             <div class="demo-modal" id="demo-help-modal" hidden>
               <h3>Clipboard 演示说明</h3>
-              <p>Version: 2.0.1</p>
+              <p>Version: 2.0.2</p>
               <p>支持文本、图片、文件历史记录、收藏筛选、图片 OCR、快速复制和删除操作。</p>
               <div class="demo-modal-actions">
                 <button class="demo-modal-btn primary" data-action="close-help" type="button">关闭</button>
@@ -1520,11 +1638,25 @@
     </main>
 
     <footer>
-      <span>Clipboard 2.0.1 · GitHub Pages + GitHub Releases</span>
+      <span>Clipboard 2.0.2 · GitHub Pages + GitHub Releases</span>
     </footer>
   </div>
 
   <script>
+    (function () {
+      var topBar = document.querySelector(".top");
+      if (!topBar) {
+        return;
+      }
+
+      function updateTopBar() {
+        topBar.classList.toggle("is-scrolled", window.scrollY > 8);
+      }
+
+      updateTopBar();
+      window.addEventListener("scroll", updateTopBar, { passive: true });
+    })();
+
     (function () {
       var owner = "OWNER";
       var repo = "REPO";
@@ -1539,9 +1671,9 @@
       }
 
       var releaseBase = "https://github.com/" + owner + "/" + repo + "/releases";
-      var windowsUrl = releaseBase + "/latest/download/Clipboard-Windows.zip";
+      var windowsUrl = releaseBase + "/latest/download/Clipboard-Win-2.0.2.zip";
       var macUrl = releaseBase + "/latest/download/Clipboard-macOS.zip";
-      var releaseUrl = releaseBase + "/latest";
+      var releaseUrl = "https://github.com/" + owner + "/" + repo;
 
       var ids = ["windows-download", "windows-download-secondary"];
       ids.forEach(function (id) {
@@ -1570,14 +1702,14 @@
       }
 
       var DEMO_IMAGES = {
-        text: "assets/clipboard_wenji.png",
-        favorite: "assets/clipboard_wenji.png",
-        image: "assets/clipboard_tupian.png?v=2.0.1",
-        other: "assets/clipboard_wenjian.png?v=2.0.1"
+        duotu: "assets/duotu.png",
+        wenzi: "assets/wenzi.png",
+        tupian: "assets/tupian.png",
+        qita: "assets/qita.png"
       };
 
       var ABOUT_LINES = [
-        "Version: 2.0.1",
+        "Version: 2.0.2",
         "Author\uff1aHJC by codex",
         "\u652f\u6301\u5f00\u673a\u81ea\u542f",
         "\u652f\u6301\u81ea\u52a8\u5220\u9664",
@@ -1596,43 +1728,45 @@
         delete: "\u793a\u4f8b\u4e0d\u652f\u6301\u5220\u9664\u8bb0\u5f55\u7684\u4ea4\u4e92~"
       };
 
+      var NO_RECORD_FEEDBACK = "\u5f53\u524d\u5206\u7c7b\u6ca1\u6709\u53ef\u64cd\u4f5c\u8bb0\u5f55\u3002";
+
       var OCR_SAMPLE = [
-        "查询剪贴板历史内容。",
-        "Clipboard 会记录文本、富文本、图片和文件路径。复制过的内容可以快速找回、编辑、收藏，再写回系统剪贴板。",
-        "图片支持文字识别功能。"
+        "Clipboard就在这里",
+        "不躲，不藏，不绕，不逃，",
+        "稳稳地接住你的剪贴板历史！"
       ].join("\n");
 
       var RECORDS = {
-        text: { type: "text", title: "\u6587\u672c\u8bb0\u5f55" },
-        image: { type: "image", title: "\u56fe\u7247\u8bb0\u5f55" },
-        other: { type: "other", title: "\u6587\u4ef6/\u6587\u4ef6\u5939\u8bb0\u5f55" }
+        duotu: { type: "image", imageKey: "duotu", title: "\u56fe\u7247 3 \u5f20" },
+        wenzi: { type: "text", imageKey: "wenzi", title: "\u6587\u672c [\u5bcc] Cr2O72- + 6[Fe(CN)6]4-" },
+        tupian: { type: "image", imageKey: "tupian", title: "\u56fe\u7247 1672x941" }
       };
 
       var HOTSPOTS = [
-        { id: "help", action: "about", x: 94.67, y: 1.74, w: 1.75, h: 3.66, label: "Help" },
-        { id: "auto-delete", action: "auto-settings", x: 58.27, y: 1.48, w: 13.03, h: 5.40, label: "Auto Delete" },
-        { id: "date-filter", action: "date-settings", x: 37.47, y: 19.60, w: 8.77, h: 4.53, label: "Date Filter" },
+        { id: "help", action: "about", x: 93.82, y: 2.17, w: 2.35, h: 3.59, label: "Help" },
+        { id: "auto-delete", action: "auto-settings", x: 53.71, y: 1.34, w: 12.31, h: 5.26, label: "Auto Delete" },
+        { id: "date-filter", action: "date-settings", x: 35.22, y: 19.21, w: 8.07, h: 4.34, label: "Date Filter" },
 
-        { id: "cat-all", action: "category", value: "all", x: 1.12, y: 19.60, w: 6.55, h: 4.53, label: "All" },
-        { id: "cat-text", action: "category", value: "text", x: 8.27, y: 19.60, w: 6.55, h: 4.53, label: "Text" },
-        { id: "cat-image", action: "category", value: "image", x: 15.42, y: 19.60, w: 6.55, h: 4.53, label: "Image" },
-        { id: "cat-other", action: "category", value: "other", x: 22.57, y: 19.60, w: 6.55, h: 4.53, label: "Other" },
-        { id: "cat-favorite", action: "category", value: "favorite", x: 29.72, y: 19.60, w: 6.55, h: 4.53, label: "Favorite" },
+        { id: "cat-all", action: "category", value: "all", x: 1.06, y: 19.21, w: 6.07, h: 4.34, label: "All" },
+        { id: "cat-text", action: "category", value: "text", x: 7.66, y: 19.21, w: 6.18, h: 4.34, label: "Text" },
+        { id: "cat-image", action: "category", value: "image", x: 14.37, y: 19.21, w: 6.12, h: 4.34, label: "Image" },
+        { id: "cat-other", action: "category", value: "other", x: 20.97, y: 19.21, w: 6.18, h: 4.34, label: "Other" },
+        { id: "cat-favorite", action: "category", value: "favorite", x: 27.68, y: 19.21, w: 6.12, h: 4.34, label: "Favorite" },
 
-        { id: "record-image", action: "record", value: "image", x: 1.69, y: 31.28, w: 26.06, h: 3.25, label: "Image Record" },
-        { id: "record-other", action: "record", value: "other", x: 1.69, y: 34.84, w: 26.06, h: 3.25, label: "Other Record" },
-        { id: "record-text", action: "record", value: "text", x: 1.69, y: 38.41, w: 26.06, h: 3.25, label: "Text Record" },
+        { id: "record-duotu", action: "record", value: "duotu", x: 1.06, y: 28.82, w: 25.26, h: 4.09, label: "Multiple Images Record" },
+        { id: "record-wenzi", action: "record", value: "wenzi", x: 1.06, y: 32.91, w: 25.26, h: 3.59, label: "Text Record" },
+        { id: "record-tupian", action: "record", value: "tupian", x: 1.06, y: 36.51, w: 25.26, h: 3.42, label: "Image Record" },
 
-        { id: "btn-clear", action: "button", value: "clear", x: 1.12, y: 92.02, w: 25.75, h: 7.06, label: "Clear History" },
-        { id: "btn-copy", action: "button", value: "copy", x: 28.57, y: 92.02, w: 24.69, h: 7.06, label: "Copy Clipboard" },
-        { id: "btn-copy-text", action: "button", value: "copyText", x: 53.70, y: 92.02, w: 15.41, h: 7.06, label: "Copy Text" },
-        { id: "btn-ocr", action: "button", value: "ocr", x: 69.67, y: 92.02, w: 15.35, h: 7.06, label: "OCR" },
-        { id: "btn-delete", action: "button", value: "delete", x: 85.58, y: 92.02, w: 12.53, h: 7.06, label: "Delete Record" }
+        { id: "btn-clear", action: "button", value: "clear", x: 1.06, y: 92.40, w: 25.26, h: 6.18, label: "Clear History" },
+        { id: "btn-copy", action: "button", value: "copy", x: 26.85, y: 92.40, w: 17.49, h: 6.18, label: "Copy Clipboard" },
+        { id: "btn-copy-text", action: "button", value: "copyText", x: 44.88, y: 92.40, w: 17.55, h: 6.18, label: "Copy Text" },
+        { id: "btn-ocr", action: "button", value: "ocr", x: 62.90, y: 92.40, w: 17.55, h: 6.18, label: "OCR" },
+        { id: "btn-delete", action: "button", value: "delete", x: 80.98, y: 92.40, w: 18.02, h: 6.18, label: "Delete Record" }
       ];
 
       var demoState = {
         selectedCategory: "all",
-        selectedRecord: "text",
+        selectedRecord: "tupian",
         selectedDate: "",
         autoDeletePeriod: "week",
         modal: { type: null },
@@ -1755,12 +1889,16 @@
 
         if (hotspot.action === "category") {
           demoState.selectedCategory = hotspot.value;
-          if (hotspot.value === "favorite" || hotspot.value === "text") {
-            demoState.selectedRecord = "text";
+          if (hotspot.value === "all") {
+            demoState.selectedRecord = demoState.selectedRecord || "tupian";
+          } else if (hotspot.value === "text") {
+            demoState.selectedRecord = "wenzi";
           } else if (hotspot.value === "image") {
-            demoState.selectedRecord = "image";
+            demoState.selectedRecord = "tupian";
           } else if (hotspot.value === "other") {
-            demoState.selectedRecord = "other";
+            demoState.selectedRecord = null;
+          } else if (hotspot.value === "favorite") {
+            demoState.selectedRecord = "tupian";
           }
           hidePopovers();
           setStatus("\u5206\u7c7b\u5207\u6362\u4e3a\u300c" + categoryLabel(hotspot.value) + "\u300d\u3002");
@@ -1769,7 +1907,13 @@
         }
 
         if (hotspot.action === "record") {
-          demoState.selectedCategory = hotspot.value;
+          if (demoState.selectedCategory === "other") {
+            hidePopovers();
+            setStatus(NO_RECORD_FEEDBACK);
+            render();
+            return;
+          }
+          demoState.selectedCategory = "all";
           demoState.selectedRecord = hotspot.value;
           hidePopovers();
           setStatus("\u5f53\u524d\u8bb0\u5f55\u4e3a\u300c" + recordLabel(hotspot.value) + "\u300d\u3002");
@@ -1784,8 +1928,14 @@
 
       function runBottomAction(action) {
         hidePopovers();
+        if (action !== "clear" && !hasCurrentRecord()) {
+          setStatus(NO_RECORD_FEEDBACK);
+          render();
+          return;
+        }
+
         if (action === "ocr") {
-          if (getCurrentImageKey() !== "image") {
+          if (!isCurrentRecordImage()) {
             setStatus("\u8bf7\u5148\u9009\u4e2d\u56fe\u7247\u8bb0\u5f55\u518d\u8bc6\u522b\u3002");
             render();
             return;
@@ -1905,7 +2055,7 @@
 
       function renderImage() {
         var key = getCurrentImageKey();
-        var src = DEMO_IMAGES[key] || DEMO_IMAGES.text;
+        var src = DEMO_IMAGES[key] || DEMO_IMAGES.tupian;
         if (els.image.getAttribute("src") !== src) {
           els.image.setAttribute("src", src);
         }
@@ -1920,7 +2070,7 @@
           if (action === "category") {
             isActive = value === demoState.selectedCategory;
           } else if (action === "record") {
-            isActive = value === demoState.selectedRecord;
+            isActive = hasCurrentRecord() && value === demoState.selectedRecord;
           } else if (action === "auto-settings") {
             isActive = !els.autoPopover.hidden;
           } else if (action === "about") {
@@ -1943,19 +2093,28 @@
 
       function getCurrentImageKey() {
         if (demoState.selectedCategory === "text") {
-          return "text";
+          return "wenzi";
         }
         if (demoState.selectedCategory === "image") {
-          return "image";
+          return "tupian";
         }
         if (demoState.selectedCategory === "other") {
-          return "other";
+          return "qita";
         }
         if (demoState.selectedCategory === "favorite") {
-          return "favorite";
+          return "tupian";
         }
-        var selected = RECORDS[demoState.selectedRecord] || RECORDS.text;
-        return selected.type;
+        var selected = RECORDS[demoState.selectedRecord] || RECORDS.tupian;
+        return selected.imageKey;
+      }
+
+      function hasCurrentRecord() {
+        return !!(demoState.selectedRecord && RECORDS[demoState.selectedRecord]);
+      }
+
+      function isCurrentRecordImage() {
+        var selected = RECORDS[demoState.selectedRecord];
+        return !!(selected && selected.type === "image");
       }
 
       function categoryLabel(category) {

@@ -13,7 +13,7 @@ from shared.rich_text import hash_image, json_dumps
 
 
 class ClipboardStore:
-    def __init__(self, data_dir: Path, max_history: int = 200):
+    def __init__(self, data_dir: Path, max_history: int | None = 200):
         self.data_dir = data_dir
         self.image_dir = data_dir / "images"
         self.db_path = data_dir / "history.db"
@@ -129,6 +129,19 @@ class ClipboardStore:
         )
 
     def load_entries(self) -> list[ClipboardEntry]:
+        if self.max_history is None:
+            rows = self.conn.execute(
+                """
+                SELECT id, type, summary, created_at, content_hash,
+                       COALESCE(plain_text, text_content) AS plain_text,
+                       html_content, rtf_content, source_formats_json, COALESCE(has_rich_text, 0) AS has_rich_text,
+                       image_path, image_paths_json, other_kind, other_payload_json, COALESCE(is_favorite, 0) AS is_favorite
+                FROM entries
+                ORDER BY id DESC
+                """
+            ).fetchall()
+            return [self._row_to_entry(row) for row in rows]
+
         rows = self.conn.execute(
             """
             SELECT id, type, summary, created_at, content_hash,
@@ -136,10 +149,17 @@ class ClipboardStore:
                    html_content, rtf_content, source_formats_json, COALESCE(has_rich_text, 0) AS has_rich_text,
                    image_path, image_paths_json, other_kind, other_payload_json, COALESCE(is_favorite, 0) AS is_favorite
             FROM entries
+            WHERE COALESCE(is_favorite, 0) = 1
+               OR id IN (
+                   SELECT id
+                   FROM entries
+                   WHERE COALESCE(is_favorite, 0) = 0
+                   ORDER BY id DESC
+                   LIMIT ?
+               )
             ORDER BY id DESC
-            LIMIT ?
             """,
-            (self.max_history,),
+            (max(self.max_history, 0),),
         ).fetchall()
         return [self._row_to_entry(row) for row in rows]
 
@@ -265,6 +285,16 @@ class ClipboardStore:
         self.conn.commit()
         self.cleanup_unused_images()
 
+    def clear_history_entries(self) -> int:
+        cursor = self.conn.execute(
+            "DELETE FROM entries WHERE COALESCE(is_favorite, 0) = 0"
+        )
+        deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+        self.conn.commit()
+        if deleted_count:
+            self.cleanup_unused_images()
+        return max(deleted_count, 0)
+
     def delete_entries_older_than(self, cutoff_created_at: str) -> int:
         cursor = self.conn.execute(
             "DELETE FROM entries WHERE created_at < ? AND COALESCE(is_favorite, 0) = 0",
@@ -277,9 +307,12 @@ class ClipboardStore:
         return max(deleted_count, 0)
 
     def prune_to_limit(self) -> None:
+        if self.max_history is None:
+            return
+
         rows = self.conn.execute(
-            "SELECT id FROM entries WHERE is_favorite = 0 ORDER BY id DESC LIMIT -1 OFFSET ?",
-            (self.max_history,),
+            "SELECT id FROM entries WHERE COALESCE(is_favorite, 0) = 0 ORDER BY id DESC LIMIT -1 OFFSET ?",
+            (max(self.max_history, 0),),
         ).fetchall()
         if not rows:
             return
