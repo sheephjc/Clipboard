@@ -3145,6 +3145,7 @@ class ClipboardManagerApp(tk.Tk):
         self.bind("<Unmap>", self._on_window_unmap, add="+")
 
         self._build_ui()
+        self.bind_all("<Button-1>", self._close_date_popup_on_outside_click, add="+")
         self.bind("<Configure>", self._on_window_resize, add="+")
         self._sync_action_buttons_layout()
         self._ensure_default_startup()
@@ -4174,15 +4175,23 @@ class ClipboardManagerApp(tk.Tk):
         def refresh_buttons() -> None:
             for key, button in policy_buttons.items():
                 is_selected = key == draft["policy"]
+                bg = COLORS["accent"] if is_selected else COLORS["card"]
+                fg = COLORS["accent_text"] if is_selected else COLORS["text"]
                 button.config(
-                    bg=COLORS["accent"] if is_selected else COLORS["card"],
-                    fg=COLORS["accent_text"] if is_selected else COLORS["text"],
+                    bg=bg,
+                    fg=fg,
+                    activebackground=bg,
+                    activeforeground=fg,
                 )
             for key, button in limit_buttons.items():
                 is_selected = key == draft["limit"]
+                bg = COLORS["accent"] if is_selected else COLORS["card"]
+                fg = COLORS["accent_text"] if is_selected else COLORS["text"]
                 button.config(
-                    bg=COLORS["accent"] if is_selected else COLORS["card"],
-                    fg=COLORS["accent_text"] if is_selected else COLORS["text"],
+                    bg=bg,
+                    fg=fg,
+                    activebackground=bg,
+                    activeforeground=fg,
                 )
 
         def select_policy(policy_key: str) -> None:
@@ -4215,6 +4224,12 @@ class ClipboardManagerApp(tk.Tk):
                     fg=COLORS["text"],
                     font=FONT_UI,
                     relief="flat",
+                    activebackground=COLORS["card"],
+                    activeforeground=COLORS["text"],
+                    bd=0,
+                    highlightthickness=0,
+                    overrelief="flat",
+                    takefocus=False,
                     cursor="hand2",
                     anchor="w",
                     padx=14,
@@ -4256,6 +4271,12 @@ class ClipboardManagerApp(tk.Tk):
             fg=COLORS["accent_text"],
             font=FONT_UI,
             relief="flat",
+            activebackground=COLORS["accent"],
+            activeforeground=COLORS["accent_text"],
+            bd=0,
+            highlightthickness=0,
+            overrelief="flat",
+            takefocus=False,
             cursor="hand2",
             padx=14,
             pady=9,
@@ -4459,9 +4480,39 @@ class ClipboardManagerApp(tk.Tk):
                 self._cal_year, self._cal_month = ny, nm
                 render_cal(ny, nm)
 
-            tk.Button(header, text="\u25c0", command=lambda: move_month(-1), bg=COLORS["card"], fg=COLORS["text"], relief="flat", cursor="hand2", padx=6).pack(side="left")
+            tk.Button(
+                header,
+                text="\u25c0",
+                command=lambda: move_month(-1),
+                bg=COLORS["card"],
+                fg=COLORS["text"],
+                activebackground=COLORS["card"],
+                activeforeground=COLORS["text"],
+                bd=0,
+                highlightthickness=0,
+                overrelief="flat",
+                takefocus=False,
+                relief="flat",
+                cursor="hand2",
+                padx=6,
+            ).pack(side="left")
             tk.Label(header, text=f"{y}年 {m}月", bg=COLORS["panel"], fg=COLORS["text"], font=FONT_TAG).pack(side="left", expand=True)
-            tk.Button(header, text="\u25b6", command=lambda: move_month(1), bg=COLORS["card"], fg=COLORS["text"], relief="flat", cursor="hand2", padx=6).pack(side="right")
+            tk.Button(
+                header,
+                text="\u25b6",
+                command=lambda: move_month(1),
+                bg=COLORS["card"],
+                fg=COLORS["text"],
+                activebackground=COLORS["card"],
+                activeforeground=COLORS["text"],
+                bd=0,
+                highlightthickness=0,
+                overrelief="flat",
+                takefocus=False,
+                relief="flat",
+                cursor="hand2",
+                padx=6,
+            ).pack(side="right")
 
             grid = tk.Frame(popup, bg=COLORS["panel"])
             grid.pack(padx=8, pady=4)
@@ -4480,7 +4531,10 @@ class ClipboardManagerApp(tk.Tk):
                         btn_fg = COLORS["accent_text"] if is_selected else COLORS["text"]
 
                         btn = tk.Button(
-                            grid, text=str(day), bg=btn_bg, fg=btn_fg, font=FONT_SMALL, relief="flat", cursor="hand2",
+                            grid, text=str(day), bg=btn_bg, fg=btn_fg, font=FONT_SMALL,
+                            activebackground=btn_bg, activeforeground=btn_fg,
+                            bd=0, highlightthickness=0, overrelief="flat", takefocus=False,
+                            relief="flat", cursor="hand2",
                             command=lambda d=date_str: select_date(d)
                         )
                         btn.grid(row=r+1, column=c, padx=2, pady=2, sticky="nsew")
@@ -4488,8 +4542,40 @@ class ClipboardManagerApp(tk.Tk):
 
             footer = tk.Frame(popup, bg=COLORS["panel"])
             footer.pack(fill="x", padx=8, pady=(4, 8))
-            tk.Button(footer, text="清空日期", command=lambda: select_date(None), bg=COLORS["card"], fg=COLORS["danger"], font=FONT_SMALL, relief="flat", cursor="hand2", pady=4).pack(side="left", expand=True, fill="x", padx=(0, 4))
-            tk.Button(footer, text="关闭日历", command=self._close_date_popup, bg=COLORS["card"], fg=COLORS["text"], font=FONT_SMALL, relief="flat", cursor="hand2", pady=4).pack(side="right", expand=True, fill="x", padx=(4, 0))
+            tk.Button(
+                footer,
+                text="清空日期",
+                command=lambda: select_date(None),
+                bg=COLORS["card"],
+                fg=COLORS["danger"],
+                activebackground=COLORS["card"],
+                activeforeground=COLORS["danger"],
+                bd=0,
+                highlightthickness=0,
+                overrelief="flat",
+                takefocus=False,
+                font=FONT_SMALL,
+                relief="flat",
+                cursor="hand2",
+                pady=4,
+            ).pack(side="left", expand=True, fill="x", padx=(0, 4))
+            tk.Button(
+                footer,
+                text="关闭日历",
+                command=self._close_date_popup,
+                bg=COLORS["card"],
+                fg=COLORS["text"],
+                activebackground=COLORS["card"],
+                activeforeground=COLORS["text"],
+                bd=0,
+                highlightthickness=0,
+                overrelief="flat",
+                takefocus=False,
+                font=FONT_SMALL,
+                relief="flat",
+                cursor="hand2",
+                pady=4,
+            ).pack(side="right", expand=True, fill="x", padx=(4, 0))
 
         def select_date(d_str):
             self.selected_date = d_str
@@ -4520,6 +4606,27 @@ class ClipboardManagerApp(tk.Tk):
                 continue
             break
         return False
+
+    def _close_date_popup_on_outside_click(self, event) -> None:
+        popup = self.date_popup
+        if popup is None or not popup.winfo_exists():
+            return
+
+        widget = getattr(event, "widget", None)
+        if self._widget_belongs_to_popup(widget, popup):
+            return
+
+        date_button = getattr(self, "date_filter_button", None)
+        current = widget
+        while current is not None:
+            if current == date_button:
+                return
+            with contextlib.suppress(Exception):
+                current = current.master
+                continue
+            break
+
+        self._close_date_popup()
 
     def _on_date_popup_focus_out(self, _event=None) -> None:
         popup = self.date_popup
